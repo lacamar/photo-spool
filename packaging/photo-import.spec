@@ -1,7 +1,7 @@
 Name:           photo-import
-Version:        0.1.0
+Version:        0.2.0
 Release:        1%{?dist}
-Summary:        Automatic ARW -> lossless DNG photo import for Sony cameras
+Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
 # Personal/local tool; MIT is just a permissive default -- change freely.
 License:        MIT
@@ -22,24 +22,31 @@ Requires:       udisks2
 Requires:       perl-Image-ExifTool
 Requires:       xdg-utils
 Requires:       hicolor-icon-theme
-# Optional: camera-as-MTP-device support (backend/device_watch.py degrades
-# gracefully -- SD-card-reader import still works fully without it).
+# Optional: camera/phone-as-MTP-or-AFC-device support (backend/device_watch.py
+# degrades gracefully -- SD-card-reader import still works fully without them).
 Recommends:     gvfs-mtp
+Recommends:     gvfs-afc
 # Optional: raw-Wayland compositor-blur detection (progressive enhancement,
 # app works fine without it -- see backend/blur.py).
 Recommends:     python3-pywayland
 
 %description
-A personal, local-only Wayland desktop app that watches for an SD card or a
-Sony camera being connected (mass storage or MTP) and automatically imports
-new ARW files: converts them to lossless-compressed DNG (via a self-managed
-dnglab binary, downloaded on first use -- no Adobe DNG Converter needed on
-Linux) and files them into the existing photo library using the same
+A personal, local-only Wayland desktop app that watches for an SD card, a
+camera (mass storage or MTP), or an iPhone (AFC) being connected, and
+imports new raw photos: ARW/CR2/CR3/NEF/RAF/RW2/ORF/PEF are converted to
+lossless-compressed DNG (via a self-managed dnglab binary, downloaded on
+first use -- no Adobe DNG Converter needed on Linux); files already in DNG
+form (e.g. iPhone ProRAW) are copied straight through. Everything is filed
+into the existing photo library using the same
 YYYY/YYYY-MM/YYYY-MM-DD/YYYY.MM.DD_Model_NNNNN.dng convention Lightroom was
-already using. Content-hash deduplication means re-scanning a card that
-still has old photos on it never re-imports anything. Native desktop
-notifications, XDG-portal-aware light/dark theming, no telemetry, no
-network access beyond the one-time dnglab download.
+already using. A source strip shows every attached device plus manually
+pinned folders as clickable icons; opening one shows a thumbnail picker
+with already-imported shots greyed out (or markable as already-imported
+without re-processing them) and everything else preselected. Content-hash
+deduplication means re-scanning a card that still has old photos on it
+never re-imports anything. Native desktop notifications, XDG-portal-aware
+light/dark theming, no telemetry, no network access beyond the one-time
+dnglab download.
 
 %prep
 %autosetup -n %{name}-%{version}
@@ -86,6 +93,21 @@ for path in sys.argv[1:]:
 %{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
 
 %changelog
+* Tue Aug 04 2026 Photo Import <noreply@example.com> - 0.2.0-1
+- Source strip: live devices (SD card/camera/iPhone) plus pinned folders as
+  clickable icons; thumbnail picker with per-photo/bulk selection and a
+  "mark as already imported" action that skips conversion entirely.
+- Multi-format raw support (CR2/CR3/NEF/RAF/RW2/ORF/PEF alongside ARW) and
+  DNG passthrough (copy, no reconversion) for iPhone ProRAW and similar.
+- iPhone support via AFC (gvfs-afc), alongside existing MTP/mass-storage.
+- Phased, per-file progress reporting (scanning/checking/converting/placing)
+  plus a persistent top-of-window status bar for the active/queued import --
+  fixes imports appearing to hang with no feedback during the (genuinely
+  slow, card-reader-bound) hashing phase.
+- Manual device refresh and on-demand mount-when-clicked for unmounted cards.
+- RPM build switched to mx-rpm (mock-based), matching this machine's other
+  packages.
+
 * Tue Aug 04 2026 Photo Import <noreply@example.com> - 0.1.0-1
 - Initial release: UDisks2 + MTP device detection, ARW scanning and
   content-hash dedup, self-downloaded dnglab lossless DNG conversion,

@@ -1,6 +1,7 @@
-"""Discovers ARW files on a source root and extracts the metadata needed
-to name and deduplicate them. Read-only: touches neither the destination
-library nor the DB (dedup lookups are plain queries the caller runs)."""
+"""Discovers raw photo files on a source root and extracts the metadata
+needed to name and deduplicate them. Read-only: touches neither the
+destination library nor the DB (dedup lookups are plain queries the
+caller runs)."""
 from __future__ import annotations
 
 import hashlib
@@ -15,6 +16,13 @@ from pathlib import Path
 EXIFTOOL_BATCH_TIMEOUT_S = 180
 HASH_CHUNK_SIZE = 1024 * 1024
 
+# dnglab's own supported-input list is much longer; this is the practical
+# subset worth recognizing here -- Sony ARW (the primary camera this app
+# was built for), the other common interchangeable-lens raw formats, and
+# DNG itself (iPhone ProRAW saves natively as DNG, as do some cameras) --
+# see `is_dng` below for why that one gets different handling downstream.
+RAW_EXTENSIONS = {".arw", ".cr2", ".cr3", ".nef", ".raf", ".rw2", ".orf", ".pef", ".dng"}
+
 
 @dataclass
 class Candidate:
@@ -24,10 +32,17 @@ class Candidate:
     captured_at: str | None  # ISO 8601 local wall-clock time, as recorded by the camera
 
 
-def find_arw_files(root: Path) -> list[Path]:
+def is_dng(path: Path) -> bool:
+    """DNG sources (iPhone ProRAW, or a camera that shoots DNG natively)
+    need no raw->DNG conversion -- the import pipeline copies these
+    straight through instead of running them past dnglab."""
+    return path.suffix.lower() == ".dng"
+
+
+def find_raw_files(root: Path) -> list[Path]:
     return sorted(
         p for p in root.rglob("*")
-        if p.is_file() and p.suffix.lower() == ".arw" and not p.name.startswith(".")
+        if p.is_file() and p.suffix.lower() in RAW_EXTENSIONS and not p.name.startswith(".")
     )
 
 

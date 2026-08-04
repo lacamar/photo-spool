@@ -78,6 +78,19 @@ MIGRATIONS: Sequence[Sequence[str]] = (
         )
         """,
     ),
+    # --- v1 -> v2: manually pinned import folders, shown alongside live
+    # devices in the source strip ---
+    (
+        """
+        CREATE TABLE saved_folders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            path TEXT NOT NULL UNIQUE,
+            label TEXT NOT NULL,
+            sort_order INTEGER NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """,
+    ),
 )
 
 

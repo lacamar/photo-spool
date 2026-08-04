@@ -28,6 +28,7 @@ from PySide6.QtQml import QQmlApplicationEngine, qmlRegisterSingletonType
 from PySide6.QtWidgets import QApplication
 
 from backend.app_controller import AppController
+from backend.thumbnail_provider import ThumbnailImageProvider
 
 
 def main() -> int:
@@ -55,12 +56,14 @@ def main() -> int:
 
     engine = QQmlApplicationEngine()
     engine.addImportPath(str(qml_dir))
+    engine.addImageProvider("thumb", ThumbnailImageProvider())
 
     controller = AppController(app, demo=args.demo)
     context = engine.rootContext()
     context.setContextProperty("appController", controller)
     context.setContextProperty("sessionModel", controller.sessionModel)
     context.setContextProperty("notificationModel", controller.notificationModel)
+    context.setContextProperty("sourcesModel", controller.sourcesModel)
 
     app.aboutToQuit.connect(controller.shutdown)
 

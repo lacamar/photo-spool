@@ -9,7 +9,7 @@ SESSION_FILE_STATUSES = ("imported", "duplicate", "failed")
 
 SESSION_KIND_LABELS = {
     "blockdev": "SD card / mass storage",
-    "mtp": "Camera (MTP)",
+    "mtp": "Camera / phone (USB)",
     "manual": "Manual import",
 }
 

@@ -3,13 +3,20 @@ for one device/mount at a time, on its own QThread with its own sqlite3
 connection (connections aren't safe to share across threads). Requests are
 queued rather than run concurrently, so a device that appears mid-import
 just waits its turn instead of racing dnglab or the DB.
+
+Progress is reported in phases (see `sessionProgress`) rather than one
+flat counter: real-world timing against an actual 330-file, 82MB/file card
+showed dnglab conversion itself is fast (well under a second per file),
+but reading+hashing the source files to dedup them is the genuinely slow
+part (~1s/file, bound by the card reader's throughput, not CPU -- nothing
+to parallelize there). Without a phase-aware progress signal, that whole
+multi-minute span reports nothing and looks hung.
 """
 from __future__ import annotations
 
 import logging
 import queue
 import shutil
-import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,17 +29,32 @@ logger = logging.getLogger(__name__)
 
 _STOP = object()
 
+PHASE_SCANNING = "scanning"
+PHASE_CHECKING = "checking"
+PHASE_CONVERTING = "converting"
+PHASE_PLACING = "placing"
+
 
 @dataclass
 class ImportRequest:
     source_root: str
     device_label: str
     kind: str  # 'blockdev' | 'mtp' | 'manual'
+    # None = import everything found; otherwise only these original
+    # filenames are processed (the rest are left untouched, not even
+    # recorded as duplicates -- the user just didn't ask for them).
+    selected_filenames: frozenset[str] | None = None
+    # True for "mark as already imported": still scans, reads metadata and
+    # hashes each selected file (so future scans dedup them correctly),
+    # but never touches dnglab or the library -- just records the dedup
+    # ledger entry. Used to backfill dedup awareness for photos this app
+    # never actually imported (e.g. ones Lightroom already handled).
+    mark_only: bool = False
 
 
 class ImportWorker(QThread):
     sessionStarted = Signal(int)  # session_id
-    sessionProgress = Signal(int, int, int, str)  # session_id, done, total, current_filename
+    sessionProgress = Signal(int, str, int, int, str)  # session_id, phase, done, total, current_filename
     sessionFinished = Signal(int)  # session_id
     dnglabUnavailable = Signal(int)  # session_id
 
@@ -75,32 +97,42 @@ class ImportWorker(QThread):
         library_root = Path(settings["library_root"])
 
         try:
-            files = scanner.find_arw_files(Path(request.source_root))
+            files = scanner.find_raw_files(Path(request.source_root))
         except OSError as exc:
             self._finish_session(conn, session_id, "failed", error_message=str(exc))
             return
 
         with conn:
             conn.execute("UPDATE sessions SET found_count = ? WHERE id = ?", (len(files), session_id))
+        self.sessionProgress.emit(session_id, PHASE_SCANNING, len(files), len(files), "")
         if not files:
             self._finish_session(conn, session_id, "completed", ejectable_path=request.source_root)
             return
 
-        dnglab_path = dnglab_setup.ensure()
-        if dnglab_path is None:
-            self._finish_session(
-                conn, session_id, "failed",
-                error_message="The DNG converter (dnglab) isn't available -- check your network "
-                               "connection, then retry from Settings.",
-            )
-            self.dnglabUnavailable.emit(session_id)
-            return
+        if request.selected_filenames is not None:
+            files = [f for f in files if f.name in request.selected_filenames]
+            if not files:
+                self._finish_session(conn, session_id, "completed", ejectable_path=request.source_root)
+                return
+
+        dnglab_path = None
+        if not request.mark_only:
+            dnglab_path = dnglab_setup.ensure()
+            if dnglab_path is None:
+                self._finish_session(
+                    conn, session_id, "failed",
+                    error_message="The DNG converter (dnglab) isn't available -- check your network "
+                                   "connection, then retry from Settings.",
+                )
+                self.dnglabUnavailable.emit(session_id)
+                return
 
         metadata = scanner.read_metadata(files)
         sort_order = 0
         to_stage: list[tuple[str, scanner.Candidate, int]] = []  # (source_hash, candidate, sort_order)
 
-        for f in files:
+        for i, f in enumerate(files):
+            self.sessionProgress.emit(session_id, PHASE_CHECKING, i + 1, len(files), f.name)
             cand = metadata.get(f)
             if cand is None:
                 self._record_file(conn, session_id, f.name, "failed", "", "Could not read file metadata",
@@ -129,50 +161,91 @@ class ImportWorker(QThread):
             self._finish_session(conn, session_id, "completed", ejectable_path=request.source_root)
             return
 
+        if request.mark_only:
+            now = datetime.now(timezone.utc).isoformat()
+            for source_hash, cand, order in to_stage:
+                self.sessionProgress.emit(session_id, PHASE_PLACING, order + 1, len(to_stage), cand.path.name)
+                with conn:
+                    conn.execute(
+                        "INSERT INTO imports (source_hash, source_filename, source_bytes, camera_model, "
+                        "captured_at, dest_path, dest_bytes, session_id, imported_at) "
+                        "VALUES (?, ?, ?, ?, ?, '', 0, ?, ?)",
+                        (source_hash, cand.path.name, cand.size_bytes, cand.camera_model,
+                         cand.captured_at, session_id, now),
+                    )
+                self._record_file(conn, session_id, cand.path.name, "imported", "", "", order)
+            self._finish_session(conn, session_id, "completed", ejectable_path=request.source_root)
+            return
+
         staging_root = paths.staging_dir() / f"session-{session_id}"
         staging_in = staging_root / "in"
         staging_out = staging_root / "out"
         staging_in.mkdir(parents=True, exist_ok=True)
 
-        staged: list[tuple[str, scanner.Candidate, int]] = []
+        # DNG sources (iPhone ProRAW, or a camera that already shoots DNG)
+        # need no conversion -- they're copied straight to the library.
+        # Everything else is staged for dnglab, keeping the source's own
+        # extension (dnglab may rely on it, not just file content, to pick
+        # a decoder for less-common formats).
+        to_convert: list[tuple[str, scanner.Candidate, int]] = []
+        to_copy: list[tuple[str, scanner.Candidate, int]] = []
+        by_hash: dict[str, tuple[scanner.Candidate, int]] = {}
         for source_hash, cand, order in to_stage:
-            link = staging_in / f"{source_hash}.ARW"
+            if scanner.is_dng(cand.path):
+                to_copy.append((source_hash, cand, order))
+                continue
+            link = staging_in / f"{source_hash}{cand.path.suffix}"
             try:
                 link.symlink_to(cand.path)
             except OSError as exc:
                 self._record_file(conn, session_id, cand.path.name, "failed", "", str(exc), order)
                 continue
-            staged.append((source_hash, cand, order))
+            to_convert.append((source_hash, cand, order))
+            by_hash[source_hash] = (cand, order)
 
         compression = settings.get("dng_compression", "lossless")
         embed_raw = bool(settings.get("embed_raw_in_dng", False))
-        self.sessionProgress.emit(session_id, 0, len(staged), "Converting to DNG…")
-        try:
-            result = converter.convert_batch(dnglab_path, staging_in, staging_out, compression, embed_raw)
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            for source_hash, cand, order in staged:
-                self._record_file(conn, session_id, cand.path.name, "failed", "", str(exc), order)
-            shutil.rmtree(staging_root, ignore_errors=True)
-            self._finish_session(conn, session_id, "failed", error_message=str(exc))
-            return
+        convert_done = 0
+        total_to_place = len(to_convert) + len(to_copy)
+
+        def on_converted(source_hash_stem: str) -> None:
+            nonlocal convert_done
+            convert_done += 1
+            entry = by_hash.get(source_hash_stem)
+            display_name = entry[0].path.name if entry else source_hash_stem
+            self.sessionProgress.emit(session_id, PHASE_CONVERTING, convert_done, len(to_convert), display_name)
+
+        tail = ""
+        if to_convert:
+            self.sessionProgress.emit(session_id, PHASE_CONVERTING, 0, len(to_convert), "")
+            try:
+                _returncode, tail = converter.convert_batch(
+                    dnglab_path, staging_in, staging_out, compression, embed_raw, on_progress=on_converted,
+                )
+            except OSError as exc:
+                for source_hash, cand, order in to_convert:
+                    self._record_file(conn, session_id, cand.path.name, "failed", "", str(exc), order)
+                to_convert = []
 
         bytes_saved = 0
         delete_originals = bool(settings.get("delete_originals_after_import"))
-        for i, (source_hash, cand, order) in enumerate(staged):
-            self.sessionProgress.emit(session_id, i + 1, len(staged), cand.path.name)
-            converted = staging_out / f"{source_hash}.dng"
-            if not converted.is_file():
-                snippet = (result.stderr or result.stdout or "conversion failed").strip()[-300:]
-                self._record_file(conn, session_id, cand.path.name, "failed", "", snippet, order)
-                continue
+        placed = 0
 
+        def place_file(cand: scanner.Candidate, order: int, source_hash: str, produced: Path,
+                        move: bool) -> None:
+            nonlocal placed, bytes_saved
+            placed += 1
+            self.sessionProgress.emit(session_id, PHASE_PLACING, placed, total_to_place, cand.path.name)
             dest = converter.unique_dest_path(converter.library_dest_path(library_root, cand))
             try:
                 dest.parent.mkdir(parents=True, exist_ok=True)
-                shutil.move(str(converted), str(dest))
+                if move:
+                    shutil.move(str(produced), str(dest))
+                else:
+                    shutil.copy2(str(produced), str(dest))
             except OSError as exc:
                 self._record_file(conn, session_id, cand.path.name, "failed", "", str(exc), order)
-                continue
+                return
 
             dest_bytes = dest.stat().st_size
             bytes_saved += max(cand.size_bytes - dest_bytes, 0)
@@ -192,6 +265,19 @@ class ImportWorker(QThread):
                     cand.path.unlink()
                 except OSError:
                     logger.info("Could not delete original %s after import", cand.path, exc_info=True)
+
+        for source_hash, cand, order in to_convert:
+            converted = staging_out / f"{source_hash}.dng"
+            if not converted.is_file():
+                placed += 1
+                self.sessionProgress.emit(session_id, PHASE_PLACING, placed, total_to_place, cand.path.name)
+                snippet = (tail or "conversion failed").strip()[-300:]
+                self._record_file(conn, session_id, cand.path.name, "failed", "", snippet, order)
+                continue
+            place_file(cand, order, source_hash, converted, move=True)
+
+        for source_hash, cand, order in to_copy:
+            place_file(cand, order, source_hash, cand.path, move=False)
 
         shutil.rmtree(staging_root, ignore_errors=True)
         with conn:

@@ -14,27 +14,53 @@ import re
 import subprocess
 from datetime import date
 from pathlib import Path
+from typing import Callable
 
 from . import scanner
 
 CONVERT_TIMEOUT_S = 60 * 30
 _UNSAFE_CHARS_RE = re.compile(r"[^A-Za-z0-9._+-]")
+_CONVERTED_RE = re.compile(r"Status: Converted '([^']+)' =>")
 
 
-def convert_batch(dnglab_path: Path, staging_in: Path, staging_out: Path,
-                   compression: str, embed_raw: bool) -> subprocess.CompletedProcess:
+def convert_batch(dnglab_path: Path, staging_in: Path, staging_out: Path, compression: str, embed_raw: bool,
+                   on_progress: Callable[[str], None] | None = None) -> tuple[int, str]:
+    """Runs dnglab over the whole staged batch, streaming its `-v` per-file
+    output so `on_progress(source_stem)` can be called as each file
+    finishes. dnglab itself is fast (well under a second per file in
+    practice); this matters because without incremental feedback here, a
+    batch of a few hundred files reports nothing for however long the
+    whole batch takes and reads as hung. Returns (returncode, output tail)
+    for error reporting -- never raises on a timeout, just kills and
+    reports it like any other failure."""
     staging_out.mkdir(parents=True, exist_ok=True)
-    return subprocess.run(
+    proc = subprocess.Popen(
         [
             str(dnglab_path), "convert",
             "-c", compression,
             "--embed-raw", "true" if embed_raw else "false",
             "--keep-mtime", "true",
-            "-r", "-f",
+            "-r", "-f", "-v",
             str(staging_in), str(staging_out),
         ],
-        capture_output=True, text=True, timeout=CONVERT_TIMEOUT_S,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
     )
+    tail: list[str] = []
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        tail.append(line)
+        if len(tail) > 50:
+            tail.pop(0)
+        match = _CONVERTED_RE.search(line)
+        if match and on_progress is not None:
+            on_progress(Path(match.group(1)).stem)
+    try:
+        proc.wait(timeout=CONVERT_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+        tail.append("Conversion timed out\n")
+    return proc.returncode, "".join(tail)
 
 
 def library_dest_path(library_root: Path, candidate: "scanner.Candidate") -> Path:

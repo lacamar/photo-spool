@@ -109,7 +109,7 @@ Item {
                 }
                 RowLayout {
                     Layout.fillWidth: true
-                    Text { text: "Also watch for the camera over USB (MTP)"; color: Theme.textPrimary; font.pixelSize: 13; Layout.fillWidth: true; wrapMode: Text.WordWrap }
+                    Text { text: "Also watch for cameras and iPhones plugged in over USB"; color: Theme.textPrimary; font.pixelSize: 13; Layout.fillWidth: true; wrapMode: Text.WordWrap }
                     Switch { id: mtpToggle; onToggled: appController.setSetting("mtp_enabled", checked) }
                 }
                 RowLayout {

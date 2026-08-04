@@ -1,6 +1,5 @@
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Dialogs
 import QtQuick.Layouts
 import PhotoImport
 import "../components"
@@ -9,58 +8,132 @@ Item {
     id: root
     signal sessionOpened(int sessionId, string deviceLabel)
 
-    FolderDialog {
-        id: folderDialog
-        title: "Choose a folder to import ARW files from"
-        onAccepted: appController.importNow(folderDialog.selectedFolder)
+    function phaseLabel(phase, done, total) {
+        switch (phase) {
+        case "scanning": return "Found " + total + " photo" + (total === 1 ? "" : "s")
+        case "checking": return "Checking " + done + "/" + total
+        case "converting": return "Converting " + done + "/" + total
+        case "placing": return "Filing " + done + "/" + total
+        default: return "Starting…"
+        }
     }
 
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 22
-        spacing: 16
+        spacing: 14
 
         Rectangle {
             Layout.fillWidth: true
-            implicitHeight: statusRow.implicitHeight + 24
+            implicitHeight: statusColumn.implicitHeight + 24
             radius: Theme.radiusMedium
-            color: Theme.surfaceElevated
+            color: appController.activeSessionId >= 0 ? Theme.accentSoft : Theme.surfaceElevated
             border.width: 1
-            border.color: Theme.border
+            border.color: appController.activeSessionId >= 0 ? Theme.accent : Theme.border
 
-            RowLayout {
-                id: statusRow
+            Behavior on color { ColorAnimation { duration: Theme.animMedium } }
+            Behavior on border.color { ColorAnimation { duration: Theme.animMedium } }
+
+            ColumnLayout {
+                id: statusColumn
                 anchors.fill: parent
                 anchors.margins: 12
-                spacing: 12
+                spacing: 8
+
+                RowLayout {
+                    id: statusRow
+                    Layout.fillWidth: true
+                    spacing: 12
+
+                    Rectangle {
+                        width: 9; height: 9; radius: 4.5
+                        color: appController.activeSessionId >= 0
+                               ? Theme.accent
+                               : (appController.watchEnabled ? Theme.healthFresh : Theme.textSecondary)
+                        Layout.alignment: Qt.AlignVCenter
+                    }
+
+                    Text {
+                        text: {
+                            if (appController.activeSessionId >= 0) {
+                                var t = "Importing " + appController.activeLabel + ": "
+                                       + root.phaseLabel(appController.activePhase, appController.activeDone,
+                                                          appController.activeTotal)
+                                if (appController.queuedCount > 0)
+                                    t += " (+" + appController.queuedCount + " more queued)"
+                                return t
+                            }
+                            return appController.watchEnabled
+                                   ? "Auto-import is on — new cards import automatically"
+                                   : "Auto-import is off — click a device below to import"
+                        }
+                        color: Theme.textPrimary
+                        font.pixelSize: 13
+                        Layout.fillWidth: true
+                    }
+
+                    Text {
+                        visible: !appController.dnglabReady
+                        text: "Setting up DNG converter…"
+                        color: Theme.textSecondary
+                        font.pixelSize: 11
+                    }
+
+                    HeaderIconButton {
+                        icon: "⟳"
+                        onClicked: appController.refreshDevices()
+                    }
+                }
 
                 Rectangle {
-                    width: 9; height: 9; radius: 4.5
-                    color: appController.watchEnabled ? Theme.healthFresh : Theme.textSecondary
-                    Layout.alignment: Qt.AlignVCenter
-                }
-
-                Text {
-                    text: appController.watchEnabled
-                          ? "Watching for SD card or camera…"
-                          : "Auto-detect is off"
-                    color: Theme.textPrimary
-                    font.pixelSize: 13
                     Layout.fillWidth: true
+                    visible: appController.activeSessionId >= 0
+                    implicitHeight: 5
+                    radius: 2.5
+                    color: Theme.chipBackground
+
+                    Rectangle {
+                        height: parent.height
+                        radius: parent.radius
+                        color: Theme.accent
+                        width: appController.activeTotal > 0
+                               ? parent.width * Math.min(1, appController.activeDone / appController.activeTotal)
+                               : parent.width * 0.12
+                        Behavior on width { NumberAnimation { duration: Theme.animMedium } }
+                    }
                 }
 
                 Text {
-                    visible: !appController.dnglabReady
-                    text: "Setting up DNG converter…"
+                    visible: appController.activeSessionId >= 0 && appController.activeFile.length > 0
+                    text: appController.activeFile
                     color: Theme.textSecondary
                     font.pixelSize: 11
-                }
-
-                HeaderButton {
-                    label: "Import folder…"
-                    onClicked: folderDialog.open()
+                    elide: Text.ElideMiddle
+                    Layout.fillWidth: true
                 }
             }
+        }
+
+        SourceStrip {
+            id: sourceStrip
+            Layout.fillWidth: true
+            expandedKey: previewPanel.visible ? previewPanel.sourceKey : ""
+            onSourceClicked: (key, label) => {
+                if (previewPanel.visible && previewPanel.sourceKey === key) {
+                    previewPanel.visible = false
+                    return
+                }
+                previewPanel.openFor(key, label)
+                previewPanel.visible = true
+            }
+        }
+
+        SourcePreviewPanel {
+            id: previewPanel
+            Layout.fillWidth: true
+            Layout.preferredHeight: 320
+            visible: false
+            onCloseRequested: previewPanel.visible = false
         }
 
         ListView {
@@ -86,6 +159,7 @@ Item {
                 errorMessage: model.errorMessage
                 ejectable: model.kind !== "manual" && model.ejectablePath.length > 0
                 ejected: model.ejected
+                progressPhase: model.progressPhase
                 progressDone: model.progressDone
                 progressTotal: model.progressTotal
                 progressFile: model.progressFile
@@ -102,7 +176,7 @@ Item {
 
             Item { Layout.fillHeight: true }
             Text {
-                text: "Plug in your SD card or Sony A7R3 to get started"
+                text: "Plug in your SD card, camera, or iPhone to get started"
                 color: Theme.textSecondary
                 font.pixelSize: 14
                 Layout.alignment: Qt.AlignHCenter

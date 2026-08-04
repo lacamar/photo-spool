@@ -18,6 +18,7 @@ Rectangle {
     property string errorMessage: ""
     property bool ejectable: false
     property bool ejected: false
+    property string progressPhase: ""
     property int progressDone: 0
     property int progressTotal: 0
     property string progressFile: ""
@@ -35,10 +36,19 @@ Rectangle {
         }
     }
 
+    function phaseLabel() {
+        switch (root.progressPhase) {
+        case "scanning": return "Found " + root.progressTotal + " photo" + (root.progressTotal === 1 ? "" : "s")
+        case "checking": return "Checking " + root.progressDone + "/" + root.progressTotal
+        case "converting": return "Converting " + root.progressDone + "/" + root.progressTotal
+        case "placing": return "Filing " + root.progressDone + "/" + root.progressTotal
+        default: return "Starting…"
+        }
+    }
+
     function statusLabel() {
         switch (root.status) {
-        case "running": return root.progressTotal > 0 ? "Importing " + root.progressDone + "/" + root.progressTotal
-                                                        : "Scanning…"
+        case "running": return root.phaseLabel()
         case "completed": return "Done"
         case "failed": return "Failed"
         case "cancelled": return "Cancelled"

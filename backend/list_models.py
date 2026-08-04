@@ -14,7 +14,7 @@ SESSION_ROLES = [
     "sessionId", "startedAt", "finishedAt", "deviceLabel", "sourceRoot", "kind", "kindLabel",
     "status", "foundCount", "importedCount", "duplicateCount", "failedCount", "bytesSaved",
     "errorMessage", "ejectablePath", "ejected",
-    "progressDone", "progressTotal", "progressFile",
+    "progressPhase", "progressDone", "progressTotal", "progressFile",
 ]
 _SESSION_BASE = Qt.UserRole + 1
 SESSION_ROLE_MAP = {n: _SESSION_BASE + i for i, n in enumerate(SESSION_ROLES)}
@@ -38,6 +38,7 @@ def _session_row_to_entry(row: sqlite3.Row) -> dict:
         "errorMessage": row["error_message"],
         "ejectablePath": row["ejectable_path"],
         "ejected": bool(row["ejected"]),
+        "progressPhase": "",
         "progressDone": 0,
         "progressTotal": 0,
         "progressFile": "",
@@ -74,6 +75,7 @@ class SessionListModel(QAbstractListModel):
         i = self.index_of(session_id)
         entry = _session_row_to_entry(row)
         if i >= 0:
+            entry["progressPhase"] = self._entries[i]["progressPhase"]
             entry["progressDone"] = self._entries[i]["progressDone"]
             entry["progressTotal"] = self._entries[i]["progressTotal"]
             entry["progressFile"] = self._entries[i]["progressFile"]
@@ -85,10 +87,11 @@ class SessionListModel(QAbstractListModel):
             self._entries.insert(0, entry)
             self.endInsertRows()
 
-    def set_progress(self, session_id: int, done: int, total: int, filename: str) -> None:
+    def set_progress(self, session_id: int, phase: str, done: int, total: int, filename: str) -> None:
         i = self.index_of(session_id)
         if i < 0:
             return
+        self._entries[i]["progressPhase"] = phase
         self._entries[i]["progressDone"] = done
         self._entries[i]["progressTotal"] = total
         self._entries[i]["progressFile"] = filename
@@ -117,6 +120,79 @@ class SessionListModel(QAbstractListModel):
 
     def roleNames(self) -> dict:
         return {r: QByteArray(n.encode()) for n, r in SESSION_ROLE_MAP.items()}
+
+
+SOURCE_ROLES = ["sourceKey", "label", "kind", "mounted", "root", "removable"]
+_SOURCE_BASE = Qt.UserRole + 1
+SOURCE_ROLE_MAP = {n: _SOURCE_BASE + i for i, n in enumerate(SOURCE_ROLES)}
+
+
+class SourceListModel(QAbstractListModel):
+    """Devices currently attached (live, from DeviceWatcher) plus
+    manually-saved folders (persisted in the `saved_folders` table) --
+    whatever the source strip shows as a clickable icon. Not DB-backed for
+    the live-device rows, since attachment state only exists at runtime;
+    `upsert`/`remove` are called directly from AppController's device
+    signal handlers instead of a `load()`."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._entries: list[dict] = []
+
+    def index_of(self, key: str) -> int:
+        for i, e in enumerate(self._entries):
+            if e["sourceKey"] == key:
+                return i
+        return -1
+
+    def entry_for(self, key: str) -> dict | None:
+        i = self.index_of(key)
+        return dict(self._entries[i]) if i >= 0 else None
+
+    def upsert(self, key: str, label: str, kind: str, mounted: bool, root: str, removable: bool) -> None:
+        entry = {"sourceKey": key, "label": label, "kind": kind, "mounted": mounted, "root": root,
+                 "removable": removable}
+        i = self.index_of(key)
+        if i >= 0:
+            self._entries[i] = entry
+            idx = self.index(i, 0)
+            self.dataChanged.emit(idx, idx)
+        else:
+            self.beginInsertRows(QModelIndex(), len(self._entries), len(self._entries))
+            self._entries.append(entry)
+            self.endInsertRows()
+
+    def set_mounted(self, key: str, mounted: bool, root: str) -> None:
+        i = self.index_of(key)
+        if i < 0:
+            return
+        self._entries[i]["mounted"] = mounted
+        self._entries[i]["root"] = root
+        idx = self.index(i, 0)
+        self.dataChanged.emit(idx, idx)
+
+    def remove(self, key: str) -> None:
+        i = self.index_of(key)
+        if i < 0:
+            return
+        self.beginRemoveRows(QModelIndex(), i, i)
+        del self._entries[i]
+        self.endRemoveRows()
+
+    def rowCount(self, parent=QModelIndex()) -> int:
+        return len(self._entries)
+
+    def data(self, index: QModelIndex, role: int = Qt.DisplayRole):
+        if not index.isValid():
+            return None
+        entry = self._entries[index.row()]
+        for name, r in SOURCE_ROLE_MAP.items():
+            if r == role:
+                return entry.get(name)
+        return None
+
+    def roleNames(self) -> dict:
+        return {r: QByteArray(n.encode()) for n, r in SOURCE_ROLE_MAP.items()}
 
 
 NOTIF_ROLES = ["notificationId", "createdAt", "text", "sessionId", "kind", "read"]

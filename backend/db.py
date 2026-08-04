@@ -1,0 +1,99 @@
+"""SQLite schema and versioned migrations (tracked via PRAGMA user_version)."""
+from __future__ import annotations
+
+import sqlite3
+from collections.abc import Sequence
+
+from . import paths
+
+# Each entry is the full set of statements that take the DB from version
+# (index) to (index + 1). Add new migrations by appending a new list; never
+# edit an already-shipped migration.
+MIGRATIONS: Sequence[Sequence[str]] = (
+    # --- v0 -> v1 ---
+    (
+        """
+        CREATE TABLE sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            started_at TEXT NOT NULL,
+            finished_at TEXT,
+            device_label TEXT NOT NULL,
+            source_root TEXT NOT NULL,
+            kind TEXT NOT NULL DEFAULT 'blockdev' CHECK (kind IN ('blockdev', 'mtp', 'manual')),
+            status TEXT NOT NULL DEFAULT 'running'
+                CHECK (status IN ('running', 'completed', 'failed', 'cancelled')),
+            found_count INTEGER NOT NULL DEFAULT 0,
+            imported_count INTEGER NOT NULL DEFAULT 0,
+            duplicate_count INTEGER NOT NULL DEFAULT 0,
+            failed_count INTEGER NOT NULL DEFAULT 0,
+            bytes_saved INTEGER NOT NULL DEFAULT 0,
+            error_message TEXT NOT NULL DEFAULT '',
+            ejectable_path TEXT NOT NULL DEFAULT '',
+            ejected INTEGER NOT NULL DEFAULT 0
+        )
+        """,
+        "CREATE INDEX idx_sessions_started ON sessions(started_at)",
+        """
+        CREATE TABLE session_files (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+            source_filename TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('imported', 'duplicate', 'failed')),
+            dest_path TEXT NOT NULL DEFAULT '',
+            error_message TEXT NOT NULL DEFAULT '',
+            sort_order INTEGER NOT NULL
+        )
+        """,
+        "CREATE INDEX idx_session_files_session ON session_files(session_id, sort_order)",
+        """
+        CREATE TABLE imports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_hash TEXT NOT NULL UNIQUE,
+            source_filename TEXT NOT NULL,
+            source_bytes INTEGER NOT NULL,
+            camera_model TEXT NOT NULL DEFAULT '',
+            captured_at TEXT,
+            dest_path TEXT NOT NULL,
+            dest_bytes INTEGER NOT NULL,
+            session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+            imported_at TEXT NOT NULL
+        )
+        """,
+        "CREATE INDEX idx_imports_quickmatch ON imports(camera_model, source_filename, source_bytes)",
+        "CREATE INDEX idx_imports_session ON imports(session_id)",
+        """
+        CREATE TABLE notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL,
+            text TEXT NOT NULL,
+            session_id INTEGER REFERENCES sessions(id) ON DELETE SET NULL,
+            kind TEXT NOT NULL DEFAULT 'other',
+            read INTEGER NOT NULL DEFAULT 0
+        )
+        """,
+        """
+        CREATE TABLE settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )
+        """,
+    ),
+)
+
+
+def connect() -> sqlite3.Connection:
+    paths.ensure_dirs()
+    conn = sqlite3.connect(str(paths.db_path()))
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    migrate(conn)
+    return conn
+
+
+def migrate(conn: sqlite3.Connection) -> None:
+    current = conn.execute("PRAGMA user_version").fetchone()[0]
+    for version, statements in enumerate(MIGRATIONS[current:], start=current + 1):
+        with conn:
+            for stmt in statements:
+                conn.execute(stmt)
+            conn.execute(f"PRAGMA user_version = {version}")

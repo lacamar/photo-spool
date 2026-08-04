@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <!-- card background -->
+  <rect x="6" y="6" width="244" height="244" rx="56" ry="56" fill="#F5F4ED" stroke="#E5E3D8" stroke-width="4"/>
+
+  <!-- camera body -->
+  <rect x="56" y="98" width="144" height="98" rx="18" fill="#D97757"/>
+  <!-- viewfinder hump -->
+  <rect x="104" y="76" width="48" height="26" rx="8" fill="#D97757"/>
+  <!-- lens -->
+  <circle cx="128" cy="148" r="34" fill="#F5F4ED"/>
+  <circle cx="128" cy="148" r="22" fill="#D97757"/>
+  <!-- shutter button -->
+  <circle cx="178" cy="112" r="7" fill="#F5F4ED"/>
+
+  <!-- import/download badge -->
+  <circle cx="188" cy="188" r="25" fill="#7A9070" stroke="#F5F4ED" stroke-width="7"/>
+  <path d="M188 178 v18 M180 188 l8 9 l8 -9" fill="none" stroke="#F5F4ED" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

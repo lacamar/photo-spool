@@ -1,0 +1,88 @@
+#!/usr/bin/env python3
+"""Entry point for the Photo Import desktop app."""
+from __future__ import annotations
+
+import argparse
+import os
+import signal
+import sys
+from pathlib import Path
+
+os.environ.setdefault("QT_QPA_PLATFORM", "wayland")
+os.environ.setdefault("QT_QUICK_CONTROLS_STYLE", "Basic")
+# Qt's QML disk bytecode cache (~/.cache/photo-import/.../qmlcache) is meant
+# to auto-invalidate when a .qml file's mtime/size changes, but that's
+# fragile across reinstalls (e.g. RPM upgrades, tarballs from `git
+# archive`) -- a stale cache silently keeps serving old compiled QML even
+# though the source on disk is current. This app is small enough that
+# recompiling QML from source on every launch is not measurably slower,
+# so just always do that.
+os.environ.setdefault("QML_DISABLE_DISK_CACHE", "1")
+
+APP_ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(APP_ROOT))
+
+from PySide6.QtCore import QTimer, QUrl
+from PySide6.QtGui import QIcon
+from PySide6.QtQml import QQmlApplicationEngine, qmlRegisterSingletonType
+from PySide6.QtWidgets import QApplication
+
+from backend.app_controller import AppController
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Photo Import")
+    parser.add_argument("--demo", action="store_true", help="Seed demo session history if the database is empty")
+    args = parser.parse_args()
+
+    # QApplication (not just QGuiApplication) so QtQuick.Dialogs' native
+    # folder dialog has QtWidgets available if the platform theme needs it.
+    app = QApplication(sys.argv)
+    app.setApplicationName("Photo Import")
+    app.setOrganizationName("photo-import")
+    app.setQuitOnLastWindowClosed(True)
+    # Launched via `python3 main.py`, Qt's Wayland platform would otherwise
+    # derive the toplevel app_id from the interpreter binary ("python3"),
+    # breaking icon/window-list matching against photo-import.desktop.
+    app.setDesktopFileName("photo-import")
+
+    icon_path = APP_ROOT / "icons" / "photo-import.svg"
+    app.setWindowIcon(QIcon(str(icon_path)) if icon_path.exists() else QIcon.fromTheme("photo-import"))
+
+    qml_dir = APP_ROOT / "qml"
+    theme_url = QUrl.fromLocalFile(str(qml_dir / "Theme.qml"))
+    qmlRegisterSingletonType(theme_url, "PhotoImport", 1, 0, "Theme")
+
+    engine = QQmlApplicationEngine()
+    engine.addImportPath(str(qml_dir))
+
+    controller = AppController(app, demo=args.demo)
+    context = engine.rootContext()
+    context.setContextProperty("appController", controller)
+    context.setContextProperty("sessionModel", controller.sessionModel)
+    context.setContextProperty("notificationModel", controller.notificationModel)
+
+    app.aboutToQuit.connect(controller.shutdown)
+
+    engine.load(QUrl.fromLocalFile(str(qml_dir / "Main.qml")))
+    if not engine.rootObjects():
+        # aboutToQuit never fires if we never reach the event loop, so stop
+        # background threads directly -- otherwise Python destroys a
+        # still-running QThread at interpreter exit, which Qt treats as fatal.
+        controller.shutdown()
+        return -1
+
+    # Route SIGINT/SIGTERM through app.quit() so aboutToQuit (and the worker
+    # thread joins in AppController.shutdown) always runs, instead of Qt's
+    # C++ objects getting torn down mid-flight at abrupt interpreter exit.
+    signal.signal(signal.SIGINT, lambda *_: app.quit())
+    signal.signal(signal.SIGTERM, lambda *_: app.quit())
+    signal_wakeup = QTimer()
+    signal_wakeup.timeout.connect(lambda: None)
+    signal_wakeup.start(200)
+
+    return app.exec()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

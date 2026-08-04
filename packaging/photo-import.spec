@@ -1,5 +1,5 @@
 Name:           photo-import
-Version:        0.2.0
+Version:        0.2.1
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -93,6 +93,13 @@ for path in sys.argv[1:]:
 %{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
 
 %changelog
+* Tue Aug 04 2026 Photo Import <noreply@example.com> - 0.2.1-1
+- Fixed the source strip device cards being completely unclickable: the
+  sourcesModel's "root" role name shadowed SourceStrip.qml's own `id: root`
+  (ListView delegates auto-expose model roles as bare identifiers), so
+  root.sourceClicked(...) silently threw a QML TypeError on every click
+  instead of opening the preview picker. Renamed the role to "rootPath".
+
 * Tue Aug 04 2026 Photo Import <noreply@example.com> - 0.2.0-1
 - Source strip: live devices (SD card/camera/iPhone) plus pinned folders as
   clickable icons; thumbnail picker with per-photo/bulk selection and a

@@ -122,7 +122,14 @@ class SessionListModel(QAbstractListModel):
         return {r: QByteArray(n.encode()) for n, r in SESSION_ROLE_MAP.items()}
 
 
-SOURCE_ROLES = ["sourceKey", "label", "kind", "mounted", "root", "removable"]
+# Named "rootPath", not "root": ListView delegates auto-expose every model
+# role as a bare identifier in scope, and "root" is by far the most common
+# `id:` name for a component's own outer Item -- a role literally called
+# "root" silently shadows it, so `root.someSignal(...)` inside a delegate
+# resolves to this role's string value instead of the component, and fails
+# with a QML TypeError that's easy to miss (stderr only, no visual sign).
+# Hit this for real in SourceStrip.qml; keep the role name collision-safe.
+SOURCE_ROLES = ["sourceKey", "label", "kind", "mounted", "rootPath", "removable"]
 _SOURCE_BASE = Qt.UserRole + 1
 SOURCE_ROLE_MAP = {n: _SOURCE_BASE + i for i, n in enumerate(SOURCE_ROLES)}
 
@@ -150,7 +157,7 @@ class SourceListModel(QAbstractListModel):
         return dict(self._entries[i]) if i >= 0 else None
 
     def upsert(self, key: str, label: str, kind: str, mounted: bool, root: str, removable: bool) -> None:
-        entry = {"sourceKey": key, "label": label, "kind": kind, "mounted": mounted, "root": root,
+        entry = {"sourceKey": key, "label": label, "kind": kind, "mounted": mounted, "rootPath": root,
                  "removable": removable}
         i = self.index_of(key)
         if i >= 0:
@@ -167,7 +174,7 @@ class SourceListModel(QAbstractListModel):
         if i < 0:
             return
         self._entries[i]["mounted"] = mounted
-        self._entries[i]["root"] = root
+        self._entries[i]["rootPath"] = root
         idx = self.index(i, 0)
         self.dataChanged.emit(idx, idx)
 

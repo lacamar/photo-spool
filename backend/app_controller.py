@@ -260,7 +260,7 @@ class AppController(QObject):
         if entry is None:
             self.previewFailed.emit(source_key, "That source is no longer available.")
             return
-        root = entry["root"]
+        root = entry["rootPath"]
         if not root and entry["kind"] == "blockdev":
             root = self._device_watcher.mount_source(source_key)
         if not root:
@@ -270,7 +270,7 @@ class AppController(QObject):
 
     def _resolve_selection(self, source_key: str, filenames: list) -> tuple[dict, frozenset] | None:
         entry = self.sourcesModel.entry_for(source_key)
-        if entry is None or not entry["root"]:
+        if entry is None or not entry["rootPath"]:
             self.toast.emit("That source is no longer available.")
             return None
         names = frozenset(str(f) for f in filenames)
@@ -289,7 +289,7 @@ class AppController(QObject):
         # blockdev/mtp/manual, so it collapses back to "mtp" here.
         kind = {"folder": "manual", "iphone": "mtp"}.get(entry["kind"], entry["kind"])
         self._submit_import(ImportRequest(
-            source_root=entry["root"], device_label=entry["label"], kind=kind, selected_filenames=names,
+            source_root=entry["rootPath"], device_label=entry["label"], kind=kind, selected_filenames=names,
         ))
 
     @Slot(str, 'QVariantList')
@@ -304,7 +304,7 @@ class AppController(QObject):
         entry, names = resolved
         kind = {"folder": "manual", "iphone": "mtp"}.get(entry["kind"], entry["kind"])
         self._submit_import(ImportRequest(
-            source_root=entry["root"], device_label=entry["label"] + " (marked, not imported)",
+            source_root=entry["rootPath"], device_label=entry["label"] + " (marked, not imported)",
             kind=kind, selected_filenames=names, mark_only=True,
         ))
 

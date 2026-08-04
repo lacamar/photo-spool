@@ -15,6 +15,7 @@ from .import_worker import ImportRequest, ImportWorker
 from .list_models import NotificationListModel, SessionListModel, SourceListModel
 from .notifications import NotificationManager
 from .preview_worker import PreviewWorker
+from .stats_worker import SourceStatsWorker
 from .theme_portal import PREFER_DARK, ThemePortal
 
 logger = logging.getLogger(__name__)
@@ -84,6 +85,14 @@ class AppController(QObject):
         self._preview_worker.previewFailed.connect(self.previewFailed)
         self._preview_worker.start()
 
+        self._stats_worker = SourceStatsWorker(self)
+        self._stats_worker.statsReady.connect(self.sourcesModel.set_stats)
+        self._stats_worker.start()
+        # The saved folders upserted above are always "mounted" (a plain
+        # local path), so their stats can be requested right away.
+        for entry in self.sourcesModel.all_entries():
+            self._stats_worker.request(entry["sourceKey"], entry["rootPath"])
+
         # The watcher itself always runs -- the source strip (attached
         # devices/cameras, mounted or not) should stay live regardless of
         # whether *automatic* importing is on. `watch_enabled` only gates
@@ -94,7 +103,7 @@ class AppController(QObject):
         self._device_watcher.sourceFound.connect(self._on_source_found)
         self._device_watcher.sourceAdded.connect(self._on_device_source_added)
         self._device_watcher.sourceRemoved.connect(self.sourcesModel.remove)
-        self._device_watcher.sourceMountChanged.connect(self.sourcesModel.set_mounted)
+        self._device_watcher.sourceMountChanged.connect(self._on_source_mount_changed)
         settings = settings_store.all_settings(self._conn)
         self._watch_enabled = bool(settings.get("watch_enabled", True))
         self._device_watcher.start(mtp_enabled=bool(settings.get("mtp_enabled", True)))
@@ -105,6 +114,8 @@ class AppController(QObject):
         self._import_worker.wait(5000)
         self._preview_worker.request_stop()
         self._preview_worker.wait(5000)
+        self._stats_worker.request_stop()
+        self._stats_worker.wait(5000)
         if self._dnglab_worker is not None:
             self._dnglab_worker.wait(1000)
         self._conn.close()
@@ -113,10 +124,23 @@ class AppController(QObject):
 
     def _on_device_source_added(self, key: str, label: str, kind: str, mounted: bool, root: str) -> None:
         self.sourcesModel.upsert(key, label, kind, mounted, root, False)
+        if mounted:
+            self._stats_worker.request(key, root)
+
+    def _on_source_mount_changed(self, key: str, mounted: bool, root: str) -> None:
+        self.sourcesModel.set_mounted(key, mounted, root)
+        if mounted:
+            self._stats_worker.request(key, root)
 
     @Slot()
     def refreshDevices(self) -> None:
         self._device_watcher.poll_now()
+        # Also re-scan stats for everything already known to be mounted --
+        # `poll_now()` only tells us about *changes* (new/removed/mount
+        # state flips), not "this card may have new photos on it now".
+        for entry in self.sourcesModel.all_entries():
+            if entry["mounted"] and entry["rootPath"]:
+                self._stats_worker.request(entry["sourceKey"], entry["rootPath"])
 
     def _on_source_found(self, root: str, label: str, kind: str) -> None:
         if not bool(settings_store.get(self._conn, "watch_enabled")):
@@ -156,6 +180,16 @@ class AppController(QObject):
 
     def _on_session_finished(self, session_id: int) -> None:
         self.sessionModel.upsert(session_id, self._conn)
+        # Re-scan the source's card so its "N new" count reflects what
+        # just got imported, without waiting for the user to hit refresh.
+        source_root_row = self._conn.execute(
+            "SELECT source_root FROM sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+        source_root = source_root_row["source_root"] if source_root_row else None
+        if source_root:
+            for entry in self.sourcesModel.all_entries():
+                if entry["mounted"] and entry["rootPath"] == source_root:
+                    self._stats_worker.request(entry["sourceKey"], entry["rootPath"])
         if session_id == self._active_session_id:
             self._active_session_id = -1
             self._active_label = ""
@@ -238,7 +272,9 @@ class AppController(QObject):
         except sqlite3.IntegrityError:
             self.toast.emit("That folder is already added.")
             return
-        self.sourcesModel.upsert(f"folder:{cur.lastrowid}", label, "folder", True, path, True)
+        key = f"folder:{cur.lastrowid}"
+        self.sourcesModel.upsert(key, label, "folder", True, path, True)
+        self._stats_worker.request(key, path)
 
     @Slot(str)
     def removeFolder(self, source_key: str) -> None:

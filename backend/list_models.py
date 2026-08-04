@@ -129,9 +129,18 @@ class SessionListModel(QAbstractListModel):
 # resolves to this role's string value instead of the component, and fails
 # with a QML TypeError that's easy to miss (stderr only, no visual sign).
 # Hit this for real in SourceStrip.qml; keep the role name collision-safe.
-SOURCE_ROLES = ["sourceKey", "label", "kind", "mounted", "rootPath", "removable"]
+SOURCE_ROLES = [
+    "sourceKey", "label", "kind", "mounted", "rootPath", "removable",
+    "statsLoaded", "fileCount", "newCount", "contentBytes",
+    "capacityBytes", "usedBytes", "freeBytes",
+]
 _SOURCE_BASE = Qt.UserRole + 1
 SOURCE_ROLE_MAP = {n: _SOURCE_BASE + i for i, n in enumerate(SOURCE_ROLES)}
+
+_SOURCE_STATS_DEFAULTS = {
+    "statsLoaded": False, "fileCount": 0, "newCount": 0, "contentBytes": 0,
+    "capacityBytes": 0, "usedBytes": 0, "freeBytes": 0,
+}
 
 
 class SourceListModel(QAbstractListModel):
@@ -156,11 +165,20 @@ class SourceListModel(QAbstractListModel):
         i = self.index_of(key)
         return dict(self._entries[i]) if i >= 0 else None
 
+    def all_entries(self) -> list[dict]:
+        return [dict(e) for e in self._entries]
+
     def upsert(self, key: str, label: str, kind: str, mounted: bool, root: str, removable: bool) -> None:
         entry = {"sourceKey": key, "label": label, "kind": kind, "mounted": mounted, "rootPath": root,
-                 "removable": removable}
+                 "removable": removable, **_SOURCE_STATS_DEFAULTS}
         i = self.index_of(key)
         if i >= 0:
+            # Preserve previously-loaded stats across a re-upsert (e.g. the
+            # same device polled again) so cards don't flicker back to
+            # "…" every poll cycle -- only a real mount-state change
+            # should invalidate them (see set_mounted below).
+            for stat_key in _SOURCE_STATS_DEFAULTS:
+                entry[stat_key] = self._entries[i].get(stat_key, _SOURCE_STATS_DEFAULTS[stat_key])
             self._entries[i] = entry
             idx = self.index(i, 0)
             self.dataChanged.emit(idx, idx)
@@ -175,6 +193,17 @@ class SourceListModel(QAbstractListModel):
             return
         self._entries[i]["mounted"] = mounted
         self._entries[i]["rootPath"] = root
+        # Stats are tied to a specific mount -- stale once that changes.
+        self._entries[i].update(_SOURCE_STATS_DEFAULTS)
+        idx = self.index(i, 0)
+        self.dataChanged.emit(idx, idx)
+
+    def set_stats(self, key: str, stats: dict) -> None:
+        i = self.index_of(key)
+        if i < 0:
+            return
+        self._entries[i].update(stats)
+        self._entries[i]["statsLoaded"] = True
         idx = self.index(i, 0)
         self.dataChanged.emit(idx, idx)
 

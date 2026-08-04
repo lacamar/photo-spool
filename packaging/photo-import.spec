@@ -1,5 +1,5 @@
 Name:           photo-import
-Version:        0.2.1
+Version:        0.2.2
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -93,6 +93,18 @@ for path in sys.argv[1:]:
 %{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
 
 %changelog
+* Tue Aug 04 2026 Photo Import <noreply@example.com> - 0.2.2-1
+- Fixed the thumbnail preview grid showing filenames/checkboxes but every
+  image tile blank: PySide6's QQuickImageProvider.requestImage binding
+  requires returning a bare QImage (with the out-size written into the
+  passed-in `size` argument), not a (QImage, QSize) tuple as the C++
+  pointer-out-param signature suggests -- the tuple form failed silently
+  (stderr RuntimeWarning only).
+- Source strip cards now show live stats instead of just an icon and
+  label: total/not-yet-imported photo counts and a capacity bar (free of
+  total), refreshed automatically on mount, manual refresh, and after an
+  import completes.
+
 * Tue Aug 04 2026 Photo Import <noreply@example.com> - 0.2.1-1
 - Fixed the source strip device cards being completely unclickable: the
   sourcesModel's "root" role name shadowed SourceStrip.qml's own `id: root`

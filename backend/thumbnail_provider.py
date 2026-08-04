@@ -24,6 +24,14 @@ class ThumbnailImageProvider(QQuickImageProvider):
         super().__init__(QQuickImageProvider.ImageType.Image)
 
     def requestImage(self, id_: str, size: QSize, requested_size: QSize):
+        # PySide6 binds C++'s `QImage requestImage(id, QSize *size, ...)`
+        # by passing `size` in as a mutable out-param object, not as part
+        # of the return value -- the only valid return is a bare QImage.
+        # Returning a (QImage, QSize) tuple (as the C++/PyQt-style pointer
+        # convention might suggest) fails silently from QML's perspective:
+        # PySide logs a RuntimeWarning to stderr ("expected QImage, got
+        # tuple") and every Image element using this provider just sits in
+        # Image.Error state forever with no visible error in the UI.
         path = unquote(id_)
         try:
             result = subprocess.run(
@@ -31,14 +39,16 @@ class ThumbnailImageProvider(QQuickImageProvider):
                 capture_output=True, timeout=EXTRACT_TIMEOUT_S,
             )
         except (OSError, subprocess.SubprocessError):
-            return QImage(), QSize()
+            return QImage()
         if result.returncode != 0 or not result.stdout:
-            return QImage(), QSize()
+            return QImage()
         image = QImage.fromData(result.stdout)
         if image.isNull():
-            return QImage(), QSize()
+            return QImage()
         if requested_size.isValid() and requested_size.width() > 0 and requested_size.height() > 0:
             image = image.scaled(
                 requested_size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation,
             )
-        return image, image.size()
+        size.setWidth(image.width())
+        size.setHeight(image.height())
+        return image

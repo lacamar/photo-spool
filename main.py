@@ -23,9 +23,9 @@ APP_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(APP_ROOT))
 
 from PySide6.QtCore import QTimer, QUrl
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QAction, QIcon
 from PySide6.QtQml import QQmlApplicationEngine, qmlRegisterSingletonType
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 from backend.app_controller import AppController
 from backend.thumbnail_provider import ThumbnailImageProvider
@@ -41,7 +41,11 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("Photo Import")
     app.setOrganizationName("photo-import")
-    app.setQuitOnLastWindowClosed(True)
+    # The window's close button hides it instead of closing (see
+    # Main.qml's onClosing) so the app keeps importing in the background;
+    # this is the belt-and-suspenders match on the Qt side so a hidden
+    # window is never mistaken for "last window closed".
+    app.setQuitOnLastWindowClosed(False)
     # Launched via `python3 main.py`, Qt's Wayland platform would otherwise
     # derive the toplevel app_id from the interpreter binary ("python3"),
     # breaking icon/window-list matching against photo-import.desktop.
@@ -74,6 +78,37 @@ def main() -> int:
         # still-running QThread at interpreter exit, which Qt treats as fatal.
         controller.shutdown()
         return -1
+
+    window = engine.rootObjects()[0]
+
+    if QSystemTrayIcon.isSystemTrayAvailable():
+        tray = QSystemTrayIcon(app.windowIcon(), app)
+        tray.setToolTip("Photo Import")
+
+        tray_menu = QMenu()
+        show_action = QAction("Show Photo Import", tray_menu)
+        show_action.triggered.connect(lambda: (window.show(), window.raise_(), window.requestActivate()))
+        tray_menu.addAction(show_action)
+        tray_menu.addSeparator()
+        quit_action = QAction("Quit", tray_menu)
+        quit_action.triggered.connect(app.quit)
+        tray_menu.addAction(quit_action)
+        tray.setContextMenu(tray_menu)
+
+        def _on_tray_activated(reason):
+            # Trigger is a plain left-click (the cross-platform "primary
+            # activation" reason) -- toggle instead of always-show so the
+            # tray icon doubles as a minimize button.
+            if reason == QSystemTrayIcon.ActivationReason.Trigger:
+                if window.isVisible():
+                    window.hide()
+                else:
+                    window.show()
+                    window.raise_()
+                    window.requestActivate()
+
+        tray.activated.connect(_on_tray_activated)
+        tray.show()
 
     # Route SIGINT/SIGTERM through app.quit() so aboutToQuit (and the worker
     # thread joins in AppController.shutdown) always runs, instead of Qt's

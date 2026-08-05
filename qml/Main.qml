@@ -16,6 +16,13 @@ Window {
     title: "Photo Import"
     color: "transparent"
 
+    onClosing: (close) => {
+        // Keep importing in the background instead of quitting -- the
+        // tray icon (main.py) is the only way to actually quit.
+        close.accepted = false
+        window.hide()
+    }
+
     Component.onCompleted: {
         Theme.mode = appController.getSetting("theme_mode")
         Theme.systemPrefersDark = appController.systemPrefersDark
@@ -26,6 +33,7 @@ Window {
         function onSystemPrefersDarkChanged() { Theme.systemPrefersDark = appController.systemPrefersDark }
         function onNavigateToSession(sessionId, deviceLabel) {
             detailPopup.openForSession(sessionId, deviceLabel)
+            window.show()
             window.raise()
             window.requestActivate()
         }

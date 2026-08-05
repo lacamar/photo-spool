@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -148,10 +149,11 @@ class AppController(QObject):
         if not bool(settings_store.get(self._conn, "watch_enabled")):
             return
         text = f"{label}: importing new photos…"
-        notifications.record(self._conn, text, None, "device_detected")
+        # Transient only (desktop notification, no in-app history entry) --
+        # this fires on every device plug-in and would otherwise clog the
+        # notification history; the import_complete notification that
+        # follows shortly after is the one worth keeping a record of.
         self._notification_manager.send("Photo Import", text)
-        self.notificationModel.load(self._conn)
-        self.unreadNotificationCountChanged.emit()
         self._submit_import(ImportRequest(source_root=root, device_label=label, kind=kind))
 
     def _submit_import(self, request: ImportRequest) -> None:
@@ -237,6 +239,20 @@ class AppController(QObject):
             }
             for r in rows
         ]
+
+    @Slot(str)
+    def openInFileBrowser(self, dest_path: str) -> None:
+        """Opens the folder containing an imported file in the desktop's
+        default file browser (not the file itself, which xdg-open would
+        hand off to whatever's associated with .dng -- usually an image
+        viewer, not a file manager)."""
+        if not dest_path:
+            return
+        folder = str(Path(dest_path).parent)
+        try:
+            subprocess.Popen(["xdg-open", folder], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except OSError:
+            self.toast.emit("Could not open the file browser.")
 
     @Slot(int)
     def ejectSession(self, session_id: int) -> None:

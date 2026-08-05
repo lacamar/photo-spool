@@ -1,5 +1,5 @@
 Name:           photo-import
-Version:        0.2.3
+Version:        0.2.4
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -93,6 +93,21 @@ for path in sys.argv[1:]:
 %{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
 
 %changelog
+* Wed Aug 05 2026 Photo Import <noreply@example.com> - 0.2.4-1
+- App now runs in the background: closing the main window hides it instead
+  of quitting, and a system tray icon (left-click to show/hide, right-click
+  for Show/Quit) is the only way to actually exit besides Ctrl+C.
+- Session detail view (the imported-files list) now shows a thumbnail per
+  row and clicking a row opens its destination folder in the default file
+  browser via xdg-open.
+- Raw-format support widened further: Canon CRM (Cinema RAW Light),
+  Olympus ORI, Panasonic/Leica RAW/RWL, Hasselblad FFF, Sigma X3F, and
+  Apple QuickTake QTK, matching dnglab's full supported-extension list.
+- "X: importing new photos..." is now a transient desktop notification only
+  (no longer written to the in-app notification history), so plugging in a
+  device repeatedly doesn't clutter the history panel; import-complete and
+  error notifications still persist as before.
+
 * Wed Aug 05 2026 Photo Import <noreply@example.com> - 0.2.3-1
 - Added a pause/resume control for imports (top status bar): pauses the
   import queue at the next safe boundary (between files during the

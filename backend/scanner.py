@@ -25,20 +25,22 @@ HASH_CHUNK_SIZE = 1024 * 1024
 # per-file "failed" handling -- never a crash or a silently-skipped file.
 RAW_EXTENSIONS = {
     ".arw", ".srf", ".sr2",              # Sony
-    ".cr2", ".cr3", ".crw",              # Canon
+    ".cr2", ".cr3", ".crw", ".crm",      # Canon (crm = Cinema RAW Light)
     ".nef", ".nrw",                      # Nikon
     ".raf",                              # Fujifilm
-    ".orf",                              # Olympus
-    ".rw2",                              # Panasonic / Leica
+    ".orf", ".ori",                      # Olympus
+    ".rw2", ".raw", ".rwl",              # Panasonic / Leica
     ".pef",                              # Pentax / Ricoh
     ".mrw",                              # Minolta
     ".srw",                              # Samsung
     ".erf",                              # Epson
     ".kdc", ".dcs", ".dcr",              # Kodak
-    ".3fr",                              # Hasselblad
+    ".3fr", ".fff",                      # Hasselblad
     ".mef",                              # Mamiya
     ".iiq", ".mos",                      # Phase One / Leaf
     ".ari",                              # ARRI
+    ".x3f",                              # Sigma (Foveon)
+    ".qtk",                              # Apple QuickTake
     ".dng",                              # DNG passthrough (iPhone ProRAW, native-DNG cameras)
 }
 

@@ -53,11 +53,37 @@ Item {
                 radius: Theme.radiusSmall
                 color: Theme.chipBackground
 
+                MouseArea {
+                    anchors.fill: parent
+                    enabled: !!modelData.destPath
+                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                    onClicked: appController.openInFileBrowser(modelData.destPath)
+                }
+
                 RowLayout {
                     id: rowContent
                     anchors.fill: parent
                     anchors.margins: 8
                     spacing: 8
+
+                    Rectangle {
+                        Layout.preferredWidth: 36
+                        Layout.preferredHeight: 36
+                        Layout.alignment: Qt.AlignVCenter
+                        radius: Theme.radiusSmall
+                        color: Theme.surfaceElevated
+                        clip: true
+
+                        Image {
+                            anchors.fill: parent
+                            visible: !!modelData.destPath
+                            source: modelData.destPath ? "image://thumb/" + encodeURIComponent(modelData.destPath) : ""
+                            asynchronous: true
+                            fillMode: Image.PreserveAspectCrop
+                            sourceSize.width: 72
+                            sourceSize.height: 72
+                        }
+                    }
 
                     Rectangle {
                         width: 7; height: 7; radius: 3.5

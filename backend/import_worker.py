@@ -172,8 +172,9 @@ class ImportWorker(QThread):
                                    sort_order)
                 sort_order += 1
                 continue
-            if scanner.quick_duplicate_check(conn, cand.camera_model, f.name, cand.size_bytes):
-                self._record_file(conn, session_id, f.name, "duplicate", "", "", sort_order)
+            quick_match = scanner.quick_duplicate_match(conn, cand.camera_model, f.name, cand.size_bytes)
+            if quick_match is not None:
+                self._record_file(conn, session_id, f.name, "duplicate", quick_match, "", sort_order)
                 sort_order += 1
                 continue
             try:

@@ -149,11 +149,12 @@ class AppController(QObject):
         if not bool(settings_store.get(self._conn, "watch_enabled")):
             return
         text = f"{label}: importing new photos…"
-        # Transient only (desktop notification, no in-app history entry) --
-        # this fires on every device plug-in and would otherwise clog the
-        # notification history; the import_complete notification that
-        # follows shortly after is the one worth keeping a record of.
-        self._notification_manager.send("Photo Import", text)
+        # Transient only (no in-app history entry, and the "transient" hint
+        # tells the desktop's own notification daemon not to keep it in its
+        # history/notification-center panel either) -- this fires on every
+        # device plug-in and would otherwise clog both; the import_complete
+        # notification that follows shortly after is the one worth keeping.
+        self._notification_manager.send("Photo Import", text, transient=True)
         self._submit_import(ImportRequest(source_root=root, device_label=label, kind=kind))
 
     def _submit_import(self, request: ImportRequest) -> None:

@@ -59,18 +59,24 @@ class NotificationManager(QObject):
     def available(self) -> bool:
         return self._session_bus is not None
 
-    def send(self, summary: str, body: str, session_id: int | None = None) -> int:
+    def send(self, summary: str, body: str, session_id: int | None = None, transient: bool = False) -> int:
         """Fire-and-forget; returns the D-Bus notification id, or 0 on
         failure (never raises -- notifications are an enhancement, not a
-        dependency of core functionality)."""
+        dependency of core functionality). `transient=True` sets the
+        freedesktop-spec "transient" hint, telling the notification daemon
+        itself not to keep this one in its own persistent history/history
+        panel -- skipping our own in-app history table (see
+        app_controller._on_source_found) has no effect on that, since it's
+        a separate store the daemon manages on its own."""
         if self._session_bus is None:
             return 0
         try:
             proxy = self._session_bus.get_object(NOTIFY_SERVICE, NOTIFY_PATH)
             iface = dbus.Interface(proxy, NOTIFY_IFACE)
             actions = ["open", "Open"] if session_id is not None else []
+            hints = {"transient": dbus.Boolean(True, variant_level=1)} if transient else {}
             notif_id = int(iface.Notify(
-                "Photo Import", dbus.UInt32(0), "", summary, body, actions, {}, -1,
+                "Photo Import", dbus.UInt32(0), "", summary, body, actions, hints, -1,
             ))
         except Exception:
             logger.warning("Failed to send desktop notification", exc_info=True)

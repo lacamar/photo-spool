@@ -145,16 +145,22 @@ def hash_file(path: Path) -> str:
     return h.hexdigest()
 
 
-def quick_duplicate_check(conn: sqlite3.Connection, camera_model: str, filename: str, size_bytes: int) -> bool:
+def quick_duplicate_match(conn: sqlite3.Connection, camera_model: str, filename: str, size_bytes: int) -> str | None:
     """Cheap pre-check (no hashing) so re-scanning a mostly-already-imported
     card doesn't re-hash every file on it -- only files that don't match on
     (model, original filename, size) fall through to the authoritative
-    content-hash check."""
+    content-hash check. Returns the existing dest_path (so callers can
+    still show/open the already-imported file), or None if there's no
+    match."""
     row = conn.execute(
-        "SELECT 1 FROM imports WHERE camera_model = ? AND source_filename = ? AND source_bytes = ? LIMIT 1",
+        "SELECT dest_path FROM imports WHERE camera_model = ? AND source_filename = ? AND source_bytes = ? LIMIT 1",
         (camera_model, filename, size_bytes),
     ).fetchone()
-    return row is not None
+    return row["dest_path"] if row else None
+
+
+def quick_duplicate_check(conn: sqlite3.Connection, camera_model: str, filename: str, size_bytes: int) -> bool:
+    return quick_duplicate_match(conn, camera_model, filename, size_bytes) is not None
 
 
 def hash_duplicate_check(conn: sqlite3.Connection, source_hash: str) -> str | None:

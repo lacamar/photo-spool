@@ -1,5 +1,5 @@
 Name:           photo-import
-Version:        0.2.4
+Version:        0.2.5
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -93,6 +93,17 @@ for path in sys.argv[1:]:
 %{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
 
 %changelog
+* Wed Aug 05 2026 Photo Import <noreply@example.com> - 0.2.5-1
+- Fixed blank/unclickable thumbnails in the session detail view for
+  duplicate files caught by the fast (no-hash) pre-check: that path was
+  recording an empty dest_path instead of looking up the existing file's
+  actual location, so both the thumbnail and click-to-open (both gated on
+  dest_path) silently did nothing for those rows.
+- The "importing new photos..." desktop notification now sets the
+  freedesktop "transient" hint, so the desktop's own notification
+  daemon/history panel doesn't retain it either (our own in-app history
+  skip from 0.2.4 only affected this app's history, not the OS one).
+
 * Wed Aug 05 2026 Photo Import <noreply@example.com> - 0.2.4-1
 - App now runs in the background: closing the main window hides it instead
   of quitting, and a system tray icon (left-click to show/hide, right-click

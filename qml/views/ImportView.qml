@@ -47,7 +47,9 @@ Item {
 
                     Rectangle {
                         width: 9; height: 9; radius: 4.5
-                        color: appController.activeSessionId >= 0
+                        color: appController.importsPaused && (appController.activeSessionId >= 0 || appController.queuedCount > 0)
+                               ? Theme.healthDue
+                               : appController.activeSessionId >= 0
                                ? Theme.accent
                                : (appController.watchEnabled ? Theme.healthFresh : Theme.textSecondary)
                         Layout.alignment: Qt.AlignVCenter
@@ -56,13 +58,16 @@ Item {
                     Text {
                         text: {
                             if (appController.activeSessionId >= 0) {
-                                var t = "Importing " + appController.activeLabel + ": "
+                                var t = (appController.importsPaused ? "Paused — " : "Importing ")
+                                       + appController.activeLabel + ": "
                                        + root.phaseLabel(appController.activePhase, appController.activeDone,
                                                           appController.activeTotal)
                                 if (appController.queuedCount > 0)
                                     t += " (+" + appController.queuedCount + " more queued)"
                                 return t
                             }
+                            if (appController.importsPaused && appController.queuedCount > 0)
+                                return "Paused — " + appController.queuedCount + " queued, waiting to resume"
                             return appController.watchEnabled
                                    ? "Auto-import is on — new cards import automatically"
                                    : "Auto-import is off — click a device below to import"
@@ -77,6 +82,11 @@ Item {
                         text: "Setting up DNG converter…"
                         color: Theme.textSecondary
                         font.pixelSize: 11
+                    }
+
+                    HeaderIconButton {
+                        icon: appController.importsPaused ? "▶" : "⏸"
+                        onClicked: appController.setImportsPaused(!appController.importsPaused)
                     }
 
                     HeaderIconButton {

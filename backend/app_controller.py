@@ -30,6 +30,7 @@ class AppController(QObject):
     previewReady = Signal(str, list)  # source_key, items
     previewFailed = Signal(str, str)  # source_key, error message
     activeSessionChanged = Signal()
+    importsPausedChanged = Signal()
     toast = Signal(str)
 
     def __init__(self, app, demo: bool = False, parent=None):
@@ -67,6 +68,7 @@ class AppController(QObject):
         self._active_total = 0
         self._active_file = ""
         self._queued_count = 0
+        self._imports_paused = False
 
         self._dnglab_ready = dnglab_setup.find_existing() is not None
         self._dnglab_worker: dnglab_setup.EnsureWorker | None = None
@@ -384,6 +386,14 @@ class AppController(QObject):
     activeTotal = Property(int, lambda self: self._active_total, notify=activeSessionChanged)
     activeFile = Property(str, lambda self: self._active_file, notify=activeSessionChanged)
     queuedCount = Property(int, lambda self: self._queued_count, notify=activeSessionChanged)
+
+    @Slot(bool)
+    def setImportsPaused(self, paused: bool) -> None:
+        self._imports_paused = paused
+        self._import_worker.set_paused(paused)
+        self.importsPausedChanged.emit()
+
+    importsPaused = Property(bool, lambda self: self._imports_paused, notify=importsPausedChanged)
 
     # --- theme / blur -----------------------------------------------------------------
 

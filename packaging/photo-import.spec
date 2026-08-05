@@ -1,5 +1,5 @@
 Name:           photo-import
-Version:        0.2.2
+Version:        0.2.3
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -93,6 +93,25 @@ for path in sys.argv[1:]:
 %{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
 
 %changelog
+* Wed Aug 05 2026 Photo Import <noreply@example.com> - 0.2.3-1
+- Added a pause/resume control for imports (top status bar): pauses the
+  import queue at the next safe boundary (between files during the
+  scan/hash/place phases, before a conversion batch starts, or before the
+  next queued device starts at all) rather than mid-file. New/auto-detected
+  cards still get queued while paused, just not processed until resumed.
+- Raw-format support widened from a curated subset to every format dnglab
+  itself supports (Sony SRF/SR2, Canon CRW, Nikon NRW, Minolta MRW,
+  Samsung SRW, Epson ERF, Kodak KDC/DCS/DCR, Hasselblad 3FR, Mamiya MEF,
+  Phase One/Leaf IIQ/MOS, ARRI ARI, alongside the existing ARW/CR2/CR3/
+  NEF/RAF/RW2/ORF/PEF/DNG) -- a format dnglab can't actually decode just
+  fails that one file with dnglab's own error, never a crash.
+- Verified DNG-passthrough (already-DNG files, e.g. iPhone ProRAW, copy
+  straight through with no reconversion) and iPhone/MTP-kind import
+  sessions end-to-end against isolated test fixtures.
+- Source strip cards now show a device/directory kind label (e.g. "SD
+  card / storage", "iPhone", "Camera (MTP)", "Folder") alongside the
+  existing photo counts and capacity bar.
+
 * Tue Aug 04 2026 Photo Import <noreply@example.com> - 0.2.2-1
 - Fixed the thumbnail preview grid showing filenames/checkboxes but every
   image tile blank: PySide6's QQuickImageProvider.requestImage binding

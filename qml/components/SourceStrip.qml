@@ -10,7 +10,17 @@ Item {
     property string expandedKey: ""
     signal sourceClicked(string key, string label)
 
-    implicitHeight: 132
+    implicitHeight: 144
+
+    function kindLabel(kind) {
+        switch (kind) {
+        case "blockdev": return "SD card / storage"
+        case "mtp": return "Camera (MTP)"
+        case "iphone": return "iPhone"
+        case "folder": return "Folder"
+        default: return "Device"
+        }
+    }
 
     function formatBytes(n) {
         if (n <= 0) return "0 B"
@@ -36,8 +46,8 @@ Item {
 
         delegate: Rectangle {
             id: tile
-            width: model.mounted ? 168 : 96
-            height: 132
+            width: model.mounted ? 172 : 96
+            height: 144
             radius: Theme.radiusMedium
             color: root.expandedKey === model.sourceKey
                    ? Theme.accentSoft
@@ -89,6 +99,16 @@ Item {
                     Layout.fillWidth: true
                     Layout.alignment: Qt.AlignHCenter
                 }
+                Text {
+                    text: root.kindLabel(model.kind)
+                    color: Theme.textSecondary
+                    font.pixelSize: 8
+                    horizontalAlignment: Text.AlignHCenter
+                    elide: Text.ElideRight
+                    maximumLineCount: 1
+                    Layout.fillWidth: true
+                    Layout.alignment: Qt.AlignHCenter
+                }
             }
 
             // Mounted: a full stat card -- icon/label header, photo counts,
@@ -120,6 +140,14 @@ Item {
                         elide: Text.ElideRight
                         Layout.fillWidth: true
                     }
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    text: root.kindLabel(model.kind)
+                    color: Theme.textSecondary
+                    font.pixelSize: 9
+                    elide: Text.ElideRight
                 }
 
                 Text {
@@ -188,7 +216,7 @@ Item {
 
         footer: Rectangle {
             width: 84
-            height: 132
+            height: 144
             radius: Theme.radiusMedium
             color: addMouse.containsMouse ? Theme.chipBackground : "transparent"
             border.width: 1

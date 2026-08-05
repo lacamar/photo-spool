@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import QMutex, QThread, QWaitCondition, Signal
 
 from . import converter, db, dnglab_setup, paths, scanner, settings_store
 
@@ -61,11 +61,42 @@ class ImportWorker(QThread):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._queue: "queue.Queue" = queue.Queue()
+        # Pausing can't interrupt a single dnglab batch invocation or a
+        # single file's hash read mid-flight (nothing safely cancellable
+        # about either), so it takes effect at the next natural boundary
+        # instead: between files during the checking/placing loops, before
+        # a conversion batch starts, or before the next queued session
+        # starts at all. Good enough granularity in practice -- the slow
+        # part (hashing) is exactly where it's checked most often.
+        self._pause_mutex = QMutex()
+        self._pause_condition = QWaitCondition()
+        self._paused = False
+        self._stopping = False
 
     def submit(self, request: ImportRequest) -> None:
         self._queue.put(request)
 
+    def set_paused(self, paused: bool) -> None:
+        self._pause_mutex.lock()
+        self._paused = paused
+        if not paused:
+            self._pause_condition.wakeAll()
+        self._pause_mutex.unlock()
+
+    def _wait_if_paused(self) -> None:
+        self._pause_mutex.lock()
+        while self._paused and not self._stopping:
+            self._pause_condition.wait(self._pause_mutex)
+        self._pause_mutex.unlock()
+
     def request_stop(self) -> None:
+        # Also wakes anything currently blocked in _wait_if_paused, so
+        # shutdown doesn't hang waiting on a paused import to resume.
+        self._pause_mutex.lock()
+        self._stopping = True
+        self._paused = False
+        self._pause_condition.wakeAll()
+        self._pause_mutex.unlock()
         self._queue.put(_STOP)
 
     def run(self) -> None:
@@ -75,6 +106,7 @@ class ImportWorker(QThread):
                 request = self._queue.get()
                 if request is _STOP:
                     break
+                self._wait_if_paused()
                 try:
                     self._run_session(conn, request)
                 except Exception:
@@ -132,6 +164,7 @@ class ImportWorker(QThread):
         to_stage: list[tuple[str, scanner.Candidate, int]] = []  # (source_hash, candidate, sort_order)
 
         for i, f in enumerate(files):
+            self._wait_if_paused()
             self.sessionProgress.emit(session_id, PHASE_CHECKING, i + 1, len(files), f.name)
             cand = metadata.get(f)
             if cand is None:
@@ -164,6 +197,7 @@ class ImportWorker(QThread):
         if request.mark_only:
             now = datetime.now(timezone.utc).isoformat()
             for source_hash, cand, order in to_stage:
+                self._wait_if_paused()
                 self.sessionProgress.emit(session_id, PHASE_PLACING, order + 1, len(to_stage), cand.path.name)
                 with conn:
                     conn.execute(
@@ -217,6 +251,7 @@ class ImportWorker(QThread):
 
         tail = ""
         if to_convert:
+            self._wait_if_paused()
             self.sessionProgress.emit(session_id, PHASE_CONVERTING, 0, len(to_convert), "")
             try:
                 _returncode, tail = converter.convert_batch(
@@ -267,6 +302,7 @@ class ImportWorker(QThread):
                     logger.info("Could not delete original %s after import", cand.path, exc_info=True)
 
         for source_hash, cand, order in to_convert:
+            self._wait_if_paused()
             converted = staging_out / f"{source_hash}.dng"
             if not converted.is_file():
                 placed += 1
@@ -277,6 +313,7 @@ class ImportWorker(QThread):
             place_file(cand, order, source_hash, converted, move=True)
 
         for source_hash, cand, order in to_copy:
+            self._wait_if_paused()
             place_file(cand, order, source_hash, cand.path, move=False)
 
         shutil.rmtree(staging_root, ignore_errors=True)

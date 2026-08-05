@@ -16,12 +16,31 @@ from pathlib import Path
 EXIFTOOL_BATCH_TIMEOUT_S = 180
 HASH_CHUNK_SIZE = 1024 * 1024
 
-# dnglab's own supported-input list is much longer; this is the practical
-# subset worth recognizing here -- Sony ARW (the primary camera this app
-# was built for), the other common interchangeable-lens raw formats, and
-# DNG itself (iPhone ProRAW saves natively as DNG, as do some cameras) --
-# see `is_dng` below for why that one gets different handling downstream.
-RAW_EXTENSIONS = {".arw", ".cr2", ".cr3", ".nef", ".raf", ".rw2", ".orf", ".pef", ".dng"}
+# Every raw format dnglab (rawler) itself claims to support, per its own
+# README -- not a curated subset -- plus DNG itself (iPhone ProRAW saves
+# natively as DNG, as do some cameras; see `is_dng` below for why that one
+# gets different handling downstream). A format landing in this set but not
+# actually decodable by the installed dnglab just fails that one file with
+# dnglab's own error text surfaced in the session -- see import_worker.py's
+# per-file "failed" handling -- never a crash or a silently-skipped file.
+RAW_EXTENSIONS = {
+    ".arw", ".srf", ".sr2",              # Sony
+    ".cr2", ".cr3", ".crw",              # Canon
+    ".nef", ".nrw",                      # Nikon
+    ".raf",                              # Fujifilm
+    ".orf",                              # Olympus
+    ".rw2",                              # Panasonic / Leica
+    ".pef",                              # Pentax / Ricoh
+    ".mrw",                              # Minolta
+    ".srw",                              # Samsung
+    ".erf",                              # Epson
+    ".kdc", ".dcs", ".dcr",              # Kodak
+    ".3fr",                              # Hasselblad
+    ".mef",                              # Mamiya
+    ".iiq", ".mos",                      # Phase One / Leaf
+    ".ari",                              # ARRI
+    ".dng",                              # DNG passthrough (iPhone ProRAW, native-DNG cameras)
+}
 
 
 @dataclass

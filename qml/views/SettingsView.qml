@@ -185,6 +185,16 @@ Item {
                     Layout.fillWidth: true
                 }
             }
+
+            Rectangle { Layout.fillWidth: true; height: 1; color: Theme.border }
+
+            Text {
+                text: "Photo Import v" + appController.appVersion
+                color: Theme.textSecondary
+                font.pixelSize: 11
+                Layout.fillWidth: true
+                horizontalAlignment: Text.AlignHCenter
+            }
         }
     }
 }

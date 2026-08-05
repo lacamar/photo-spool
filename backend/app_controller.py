@@ -10,7 +10,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Property, QObject, QUrl, Signal, Slot
 
-from . import db, device_watch, dnglab_setup, notifications, paths, settings_store
+from . import __version__, db, device_watch, dnglab_setup, notifications, paths, settings_store
 from .blur import compositor_supports_blur
 from .import_worker import ImportRequest, ImportWorker
 from .list_models import NotificationListModel, SessionListModel, SourceListModel
@@ -429,6 +429,8 @@ class AppController(QObject):
         return self._blur_available
 
     blurSupported = Property(bool, _blur_supported, constant=True)
+
+    appVersion = Property(str, lambda self: __version__, constant=True)
 
     # --- dnglab setup ------------------------------------------------------------------
 

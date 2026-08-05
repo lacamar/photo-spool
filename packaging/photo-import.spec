@@ -1,5 +1,5 @@
 Name:           photo-import
-Version:        0.2.5
+Version:        0.2.6
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -93,6 +93,11 @@ for path in sys.argv[1:]:
 %{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
 
 %changelog
+* Wed Aug 05 2026 Photo Import <noreply@example.com> - 0.2.6-1
+- App version is now shown at the bottom of the Settings page
+  (backend/__init__.py's __version__ is the single source of truth --
+  bump it alongside this spec's Version on every release).
+
 * Wed Aug 05 2026 Photo Import <noreply@example.com> - 0.2.5-1
 - Fixed blank/unclickable thumbnails in the session detail view for
   duplicate files caught by the fast (no-hash) pre-check: that path was

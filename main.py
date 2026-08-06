@@ -24,11 +24,47 @@ sys.path.insert(0, str(APP_ROOT))
 
 from PySide6.QtCore import QTimer, QUrl
 from PySide6.QtGui import QAction, QIcon
+from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtQml import QQmlApplicationEngine, qmlRegisterSingletonType
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 from backend.app_controller import AppController
 from backend.thumbnail_provider import ThumbnailImageProvider
+
+# Arbitrary but fixed name for the single-instance IPC socket -- see
+# _acquire_single_instance below. Bumping this would let two instances run
+# again until both are on a build with the new name, so there's no reason
+# to ever change it.
+SINGLE_INSTANCE_KEY = "photo-import-single-instance"
+
+
+def _acquire_single_instance(app: QApplication) -> QLocalServer | None:
+    """Returns a listening QLocalServer if this is the only running
+    instance. If another instance is already listening, nudges it to raise
+    its window and returns None -- the caller should exit immediately
+    without touching the DB or starting any backend workers.
+
+    This matters more than the usual "annoying to have two windows" case:
+    AppController starts a DeviceWatcher that auto-imports from any
+    inserted card. Two independent instances each detecting the same card
+    as newly found (neither aware of the other) raced to import the same
+    photos and produced "(2)"/"(3)"/"(4)" duplicate files before this
+    existed -- see the 0.2.8 changelog entry.
+    """
+    socket = QLocalSocket()
+    socket.connectToServer(SINGLE_INSTANCE_KEY)
+    if socket.waitForConnected(200):
+        socket.write(b"show")
+        socket.waitForBytesWritten(200)
+        socket.disconnectFromServer()
+        return None
+
+    # No live instance -- clean up a stale socket file a crashed previous
+    # instance may have left behind before claiming the name ourselves.
+    QLocalServer.removeServer(SINGLE_INSTANCE_KEY)
+    server = QLocalServer(app)
+    server.listen(SINGLE_INSTANCE_KEY)
+    return server
 
 
 def main() -> int:
@@ -50,6 +86,10 @@ def main() -> int:
     # derive the toplevel app_id from the interpreter binary ("python3"),
     # breaking icon/window-list matching against photo-import.desktop.
     app.setDesktopFileName("photo-import")
+
+    instance_server = _acquire_single_instance(app)
+    if instance_server is None:
+        return 0
 
     icon_path = APP_ROOT / "icons" / "photo-import.svg"
     app.setWindowIcon(QIcon(str(icon_path)) if icon_path.exists() else QIcon.fromTheme("photo-import"))
@@ -81,13 +121,30 @@ def main() -> int:
 
     window = engine.rootObjects()[0]
 
+    def show_window():
+        window.show()
+        window.raise_()
+        window.requestActivate()
+
+    # A second launch connects here (see _acquire_single_instance) instead
+    # of starting its own instance -- treat that exactly like a tray click.
+    # The message content doesn't matter (only "show" is ever sent); any
+    # incoming connection at all means "someone tried to launch me again".
+    def _on_instance_connection():
+        conn = instance_server.nextPendingConnection()
+        show_window()
+        if conn is not None:
+            conn.disconnectFromServer()
+
+    instance_server.newConnection.connect(_on_instance_connection)
+
     if QSystemTrayIcon.isSystemTrayAvailable():
         tray = QSystemTrayIcon(app.windowIcon(), app)
         tray.setToolTip("Photo Import")
 
         tray_menu = QMenu()
         show_action = QAction("Show Photo Import", tray_menu)
-        show_action.triggered.connect(lambda: (window.show(), window.raise_(), window.requestActivate()))
+        show_action.triggered.connect(show_window)
         tray_menu.addAction(show_action)
         tray_menu.addSeparator()
         quit_action = QAction("Quit", tray_menu)
@@ -103,9 +160,7 @@ def main() -> int:
                 if window.isVisible():
                     window.hide()
                 else:
-                    window.show()
-                    window.raise_()
-                    window.requestActivate()
+                    show_window()
 
         tray.activated.connect(_on_tray_activated)
         tray.show()

@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 import queue
 import shutil
+import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -284,16 +285,30 @@ class ImportWorker(QThread):
                 return
 
             dest_bytes = dest.stat().st_size
-            bytes_saved += max(cand.size_bytes - dest_bytes, 0)
             now = datetime.now(timezone.utc).isoformat()
-            with conn:
-                conn.execute(
-                    "INSERT INTO imports (source_hash, source_filename, source_bytes, camera_model, "
-                    "captured_at, dest_path, dest_bytes, session_id, imported_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (source_hash, cand.path.name, cand.size_bytes, cand.camera_model,
-                     cand.captured_at, str(dest), dest_bytes, session_id, now),
-                )
+            try:
+                with conn:
+                    conn.execute(
+                        "INSERT INTO imports (source_hash, source_filename, source_bytes, camera_model, "
+                        "captured_at, dest_path, dest_bytes, session_id, imported_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (source_hash, cand.path.name, cand.size_bytes, cand.camera_model,
+                         cand.captured_at, str(dest), dest_bytes, session_id, now),
+                    )
+            except sqlite3.IntegrityError:
+                # Someone else already imported this exact content between
+                # our dedup check and now (e.g. a second session racing on
+                # the same source_hash -- see main.py's single-instance
+                # lock for the case that used to make this common). Discard
+                # the copy we just produced instead of leaving an orphan
+                # duplicate file on disk, and record it like any other
+                # dedup hit rather than crashing the whole session.
+                dest.unlink(missing_ok=True)
+                existing_dest = scanner.hash_duplicate_check(conn, source_hash) or ""
+                self._record_file(conn, session_id, cand.path.name, "duplicate", existing_dest, "", order)
+                return
+
+            bytes_saved += max(cand.size_bytes - dest_bytes, 0)
             self._record_file(conn, session_id, cand.path.name, "imported", str(dest), "", order)
 
             if delete_originals:

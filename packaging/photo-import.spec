@@ -1,5 +1,5 @@
 Name:           photo-import
-Version:        0.2.7
+Version:        0.2.8
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -93,6 +93,20 @@ for path in sys.argv[1:]:
 %{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
 
 %changelog
+* Thu Aug 06 2026 Photo Import <noreply@example.com> - 0.2.8-1
+- Fixed a duplicate-import bug: since 0.2.4 (run-in-background/tray icon),
+  nothing stopped a second launch from starting its own independent
+  instance -- each with its own DeviceWatcher auto-importing from the same
+  attached card, racing to import the same photos and landing on
+  "(2)"/"(3)"/"(4)" duplicate filenames. The app now enforces a single
+  running instance (QLocalServer/QLocalSocket lock in main.py): a second
+  launch just raises the existing window instead of starting duplicate
+  background workers.
+- Hardened the import pipeline against the underlying race regardless:
+  if two imports ever do land on the same source_hash concurrently, the
+  loser now discards its copy and records a normal "duplicate" instead of
+  crashing the session and leaving an orphan file on disk.
+
 * Thu Aug 06 2026 Photo Import <noreply@example.com> - 0.2.7-1
 - Thumbnails (session detail view and the source picker grid) now have
   true squircle (superellipse) corners instead of a plain circular

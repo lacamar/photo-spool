@@ -71,7 +71,13 @@ def _find_dcim(root: Path, depth: int = DCIM_SEARCH_DEPTH) -> bool:
     """Cheap, shallow check for a DCIM folder -- used only to decide
     whether to fire the *automatic* silent-import trigger, not as the
     real file search (the scanner does the recursive walk) and not to
-    gate whether a mounted source shows up in the strip at all."""
+    gate whether a mounted source shows up in the strip at all. Also
+    matches when `root` itself is already named DCIM -- an iPhone's
+    reported root is pre-narrowed to its DCIM folder (see
+    _narrow_iphone_root), so the child-search below would otherwise never
+    match and auto-import would silently never fire for one."""
+    if root.name.upper() == "DCIM" and root.is_dir():
+        return True
     try:
         entries = list(root.iterdir())
     except OSError:
@@ -84,6 +90,24 @@ def _find_dcim(root: Path, depth: int = DCIM_SEARCH_DEPTH) -> bool:
             if entry.is_dir() and _find_dcim(entry, depth - 1):
                 return True
     return False
+
+
+def _narrow_iphone_root(root: str) -> str:
+    """An iPhone's AFC root also exposes PhotoData/Mutations/... --
+    internal iOS Photos-library bookkeeping (Live Photo edit derivatives
+    like ".../Adjustments/FullSizeRender.mov", etc.), not real importable
+    originals. Confirmed live against a real iPhone: scanning the whole
+    AFC root pulled these in as false-positive "videos" (matching
+    VIDEO_EXTENSIONS by name alone) and 679 of 693 "found" files failed
+    with a plain ENOENT -- PhotoData/Mutations entries are inconsistent/
+    semi-virtual over AFC, not stable files. Scoping to DCIM (present on
+    every iPhone) fixes both the false positives and the reliability hit
+    from touching that subtree at all. Deliberately iPhone-only: a Sony
+    camera's video files live in PRIVATE/M4ROOT, a sibling of (not
+    inside) DCIM, so narrowing blockdev/MTP sources the same way would
+    silently drop real footage."""
+    dcim = Path(root) / "DCIM"
+    return str(dcim) if dcim.is_dir() else root
 
 
 def _gvfs_dir() -> Path:
@@ -368,6 +392,8 @@ class DeviceWatcher(QObject):
             # "mtp" so it stays a value the sessions table's CHECK
             # constraint actually allows.
             display_kind = "iphone" if name.startswith("afc:host=") else "mtp"
+            if display_kind == "iphone":
+                root = _narrow_iphone_root(root)
             if key not in self._sources:
                 self._sources[key] = {"label": label, "kind": display_kind, "mounted": True, "root": root,
                                        "camera_media": None}

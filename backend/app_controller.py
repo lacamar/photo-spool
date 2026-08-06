@@ -43,6 +43,7 @@ class AppController(QObject):
         super().__init__(parent)
         self._app = app
         self._conn = db.connect()
+        self._reconcile_interrupted_sessions()
         if demo:
             from . import demo as demo_module
             demo_module.seed_if_empty(self._conn)
@@ -115,6 +116,23 @@ class AppController(QObject):
         settings = settings_store.all_settings(self._conn)
         self._watch_enabled = bool(settings.get("watch_enabled", True))
         self._device_watcher.start(mtp_enabled=bool(settings.get("mtp_enabled", True)))
+
+    def _reconcile_interrupted_sessions(self) -> None:
+        """Any session still marked 'running' at startup means the
+        previous process died before finishing it -- a crash, an OOM
+        kill, or (confirmed happening for real while debugging iPhone
+        import) a service restart landing mid-scan. Nothing will ever
+        resume it (ImportWorker's queue is in-memory only), so mark it
+        failed instead of leaving a permanently-stuck "running" card in
+        the history."""
+        now = datetime.now(timezone.utc).isoformat()
+        with self._conn:
+            self._conn.execute(
+                "UPDATE sessions SET status = 'failed', finished_at = ?, "
+                "error_message = 'Import was interrupted (app restarted or crashed)' "
+                "WHERE status = 'running'",
+                (now,),
+            )
 
     def shutdown(self) -> None:
         self._device_watcher.stop()

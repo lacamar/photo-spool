@@ -1,5 +1,5 @@
 Name:           photo-import
-Version:        0.2.18
+Version:        0.2.19
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -132,6 +132,20 @@ done
 %{_userunitdir}/%{name}.service
 
 %changelog
+* Thu Aug 06 2026 Photo Import <noreply@example.com> - 0.2.19-1
+- Fixed a real iPhone import attempt mostly failing (679 of 693 files,
+  "No such file or directory"): the AFC scan walked the phone's entire
+  root, including PhotoData/Mutations/... (iOS's internal Live-Photo-edit
+  bookkeeping), whose entries are inconsistent/semi-virtual over AFC and
+  happened to match VIDEO_EXTENSIONS by name (e.g. ".../Adjustments/
+  FullSizeRender.mov"). The reported source root is now scoped to DCIM
+  when present -- iPhone-only, not blockdev/MTP, since a Sony camera's
+  video lives in PRIVATE/M4ROOT, a sibling of (not inside) DCIM.
+- Any session still marked "running" at startup (a crash, an OOM kill, or
+  a service restart landing mid-scan -- all three seen for real while
+  debugging the above) is now reconciled to "failed" instead of leaving
+  a permanently-stuck "running" card in the history forever.
+
 * Thu Aug 06 2026 Photo Import <noreply@example.com> - 0.2.18-1
 - Fixed iPhone detection not working at all, root-caused live against a
   real device:

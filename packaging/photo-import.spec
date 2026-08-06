@@ -1,5 +1,5 @@
 Name:           photo-import
-Version:        0.2.20
+Version:        0.2.21
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -139,6 +139,15 @@ done
 %{_userunitdir}/%{name}.service
 
 %changelog
+* Thu Aug 06 2026 Photo Import <noreply@example.com> - 0.2.21-1
+- Thumbnails are now cached to disk ($XDG_CACHE_HOME/photo-import/
+  thumbnails), keyed by (path, mtime, size). A source with a large,
+  mostly-already-imported library (an iPhone with hundreds of photos,
+  only a handful new each scan) was re-running exiftool/ffmpeg for every
+  single file on every scan -- confirmed a ~180x speedup on a cache hit
+  in testing. A changed mtime/size naturally misses the cache and just
+  re-extracts, so this needs no explicit invalidation.
+
 * Thu Aug 06 2026 Photo Import <noreply@example.com> - 0.2.20-1
 - Fixed the iPhone appearing undetected again after a physical unplug/
   replug: confirmed live that `gio mount -li` never lists the phone's

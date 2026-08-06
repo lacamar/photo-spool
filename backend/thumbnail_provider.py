@@ -5,11 +5,22 @@ embedded JPEG preview via `exiftool -b -PreviewImage` -- fast (well under
 the raw sensor data. Video files have no such tag (confirmed empty against
 real iPhone .MOV and camera .mp4 files), so those decode one real frame
 with ffmpeg instead. QML's `Image { asynchronous: true }` runs this off the
-GUI thread automatically."""
+GUI thread automatically.
+
+Extracted previews are cached to disk (paths.thumbnail_cache_dir()), keyed
+by (path, mtime, size) -- a source like an iPhone with a large camera roll
+mostly re-shows the *same* hundreds of already-imported photos on every
+scan (only a handful of new ones each time), and re-running exiftool/ffmpeg
+for all of them every time the picker opens was the single biggest cost in
+that path. A changed mtime/size naturally misses the cache and just
+re-extracts, so this needs no explicit invalidation."""
 from __future__ import annotations
 
+import hashlib
 import logging
+import os
 import subprocess
+import tempfile
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -17,7 +28,7 @@ from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QImage
 from PySide6.QtQuick import QQuickImageProvider
 
-from . import scanner
+from . import paths, scanner
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +38,15 @@ VIDEO_FRAME_TIMEOUT_S = 15
 # clips; the "00:00:00" retry covers clips shorter than that (ffmpeg
 # fails outright rather than clamping when -ss lands past the last frame).
 VIDEO_FRAME_SEEK_OFFSETS = ("00:00:00.5", "00:00:00")
+
+
+def _cache_path(path: str) -> Path | None:
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None
+    key = hashlib.sha256(f"{path}\n{st.st_mtime_ns}\n{st.st_size}".encode()).hexdigest()
+    return paths.thumbnail_cache_dir() / f"{key}.jpg"
 
 
 class ThumbnailImageProvider(QQuickImageProvider):
@@ -43,7 +63,7 @@ class ThumbnailImageProvider(QQuickImageProvider):
         # tuple") and every Image element using this provider just sits in
         # Image.Error state forever with no visible error in the UI.
         path = unquote(id_)
-        raw = self._extract_video_frame(path) if scanner.is_video(Path(path)) else self._extract_preview(path)
+        raw = self._load_or_extract(path)
         if raw is None:
             return QImage()
         image = QImage.fromData(raw)
@@ -56,6 +76,35 @@ class ThumbnailImageProvider(QQuickImageProvider):
         size.setWidth(image.width())
         size.setHeight(image.height())
         return image
+
+    def _load_or_extract(self, path: str) -> bytes | None:
+        cache_path = _cache_path(path)
+        if cache_path is not None:
+            try:
+                return cache_path.read_bytes()
+            except OSError:
+                pass  # not cached (or unreadable) -- fall through to extracting it
+        raw = self._extract_video_frame(path) if scanner.is_video(Path(path)) else self._extract_preview(path)
+        if raw is not None and cache_path is not None:
+            self._write_cache(cache_path, raw)
+        return raw
+
+    def _write_cache(self, cache_path: Path, raw: bytes) -> None:
+        # Multiple images can be requested concurrently (QML runs this
+        # provider off the GUI thread, possibly from more than one worker
+        # thread at once) -- write-to-temp-then-rename keeps a concurrent
+        # reader from ever seeing a partially-written cache file.
+        try:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            fd, tmp_name = tempfile.mkstemp(dir=cache_path.parent, suffix=".tmp")
+            try:
+                with os.fdopen(fd, "wb") as fh:
+                    fh.write(raw)
+                os.replace(tmp_name, cache_path)
+            except OSError:
+                os.unlink(tmp_name)
+        except OSError:
+            logger.debug("Could not write thumbnail cache entry for %s", cache_path, exc_info=True)
 
     def _extract_preview(self, path: str) -> bytes | None:
         try:

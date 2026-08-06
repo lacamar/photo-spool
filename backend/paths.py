@@ -14,6 +14,19 @@ def data_home() -> Path:
     return base / APP_NAME
 
 
+def cache_home() -> Path:
+    xdg = os.environ.get("XDG_CACHE_HOME")
+    base = Path(xdg) if xdg else Path.home() / ".cache"
+    return base / APP_NAME
+
+
+def thumbnail_cache_dir() -> Path:
+    """Extracted-preview cache for ThumbnailImageProvider -- keyed by
+    (path, mtime, size), so it's disposable and safe to wipe entirely at
+    any time (a cache miss just re-extracts, same as today)."""
+    return cache_home() / "thumbnails"
+
+
 def db_path() -> Path:
     return data_home() / "data.db"
 

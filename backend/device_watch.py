@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -55,6 +56,7 @@ logger = logging.getLogger(__name__)
 
 POLL_INTERVAL_MS = 2500
 MTP_MOUNT_RETRY_S = 12
+GVFS_FUSE_CHECK_RETRY_S = 10
 
 UDISKS_SERVICE = "org.freedesktop.UDisks2"
 UDISKS_PATH = "/org/freedesktop/UDisks2"
@@ -89,8 +91,53 @@ def _gvfs_dir() -> Path:
     return Path(runtime_dir) / "gvfs"
 
 
+def _gvfs_fuse_mounted(gvfs_dir: Path) -> bool:
+    """Whether $XDG_RUNTIME_DIR/gvfs is actually a live gvfsd-fuse mount --
+    not just whether a gvfsd-fuse *process* happens to exist, which could
+    be stale/unrelated. `gio mount` succeeding is not enough on its own:
+    confirmed against a real iPhone that `gio` reported its AFC share
+    mounted fine (readable via `gio info`) while this FUSE directory
+    stayed completely empty the whole time, because nothing had started
+    gvfsd-fuse at all."""
+    target = str(gvfs_dir)
+    try:
+        with open("/proc/mounts", encoding="utf-8") as fh:
+            return any(
+                line.split()[1] == target and line.split()[2] == "fuse.gvfsd-fuse"
+                for line in fh if len(line.split()) > 2
+            )
+    except OSError:
+        return False
+
+
+def _ensure_gvfs_fuse_running(gvfs_dir: Path) -> None:
+    """GNOME sessions start gvfsd-fuse automatically (D-Bus/autostart
+    machinery this app can't rely on); a bare compositor session (e.g.
+    niri, confirmed on this machine) doesn't start it at all, so `gio
+    mount`-ing an MTP/AFC device works at the GVfs API level but the
+    device never appears as a real file to anything using plain POSIX
+    paths -- which is everything downstream of this module. gvfs-fuse
+    ships only the binary (no unit, no autostart entry), so self-starting
+    it here is the reliable fix rather than depending on the desktop
+    environment to have arranged it -- same philosophy as dnglab's
+    self-download in dnglab_setup.py."""
+    gvfs_dir.mkdir(parents=True, exist_ok=True)
+    if _gvfs_fuse_mounted(gvfs_dir):
+        return
+    gvfsd_fuse = shutil.which("gvfsd-fuse") or "/usr/libexec/gvfsd-fuse"
+    if not Path(gvfsd_fuse).is_file():
+        return  # gvfs-fuse isn't installed -- nothing to do, degrade quietly
+    try:
+        subprocess.Popen(
+            [gvfsd_fuse, str(gvfs_dir)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except OSError:
+        logger.warning("Could not start gvfsd-fuse", exc_info=True)
+
+
 def _gvfs_fallback_label(gvfs_dirname: str) -> str:
-    # Used only if _gio_mount_names() couldn't find a proper name. Dirnames
+    # Used only if _gio_display_name() couldn't find a proper name. Dirnames
     # look like "mtp:host=SonyCorporation_ILCE_7RM3_..." or
     # "afc:host=00008130-0012345A6B78901C" -- not worth fully decoding,
     # just make it slightly more readable than the raw gvfs name.
@@ -101,32 +148,32 @@ def _gvfs_fallback_label(gvfs_dirname: str) -> str:
     return gvfs_dirname
 
 
-def _gio_mount_names() -> dict[str, str]:
-    """Maps gvfs dirname -> the human-readable device name gvfs itself
-    knows (e.g. "SONY ILCE-7RM3" or "Lachlan's iPhone"), parsed from `gio
-    mount -li`'s `Mount(N): <name> -> <uri>` header plus its
-    `default_location=` line (whose last path component is the gvfs
-    dirname) -- far more reliable than guessing from the dirname alone."""
+def _gio_display_name(path: Path) -> str:
+    """The human-readable device/mount name gvfs itself knows (e.g. "SONY
+    ILCE-7RM3" or "Lachlan's iPhone"), read straight off the already-
+    discovered FUSE path via `gio info`. Simpler and more reliable than
+    the previous approach of cross-referencing `gio mount -li`'s free-text
+    device name against a dirname reconstructed from its
+    `default_location=` URI: confirmed broken against a real iPhone --
+    that URI always ends in "/", so its last path segment came back empty
+    (silently dropping every name), and even fixed, the segment is just
+    the bare device UDID, never the "afc:host=..."/"mtp:host=..." form
+    the FUSE directory actually uses. LC_ALL=C keeps the "display name:"
+    label itself parseable regardless of the system locale (only the
+    value -- the device's own name -- should ever be localized)."""
     try:
-        result = subprocess.run(["gio", "mount", "-li"], capture_output=True, text=True, timeout=5)
+        result = subprocess.run(
+            ["gio", "info", "-a", "standard::display-name", str(path)],
+            capture_output=True, text=True, timeout=5, env={**os.environ, "LC_ALL": "C"},
+        )
     except (OSError, subprocess.SubprocessError):
-        return {}
+        return ""
     if result.returncode != 0:
-        return {}
-    names: dict[str, str] = {}
-    pending_name = ""
+        return ""
     for line in result.stdout.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("Mount("):
-            marker = "): "
-            idx = stripped.find(marker)
-            arrow = stripped.find(" -> ")
-            pending_name = stripped[idx + len(marker):arrow] if idx != -1 and arrow != -1 else ""
-        elif stripped.startswith("default_location=") and pending_name:
-            dirname = stripped.split("/")[-1]
-            if dirname:
-                names[dirname] = pending_name
-    return names
+        if line.startswith("display name:"):
+            return line.split(":", 1)[1].strip()
+    return ""
 
 
 class DeviceWatcher(QObject):
@@ -146,6 +193,7 @@ class DeviceWatcher(QObject):
         self._auto_mount_attempted: set[str] = set()  # blockdev keys
         self._auto_import_fired: set[str] = set()  # keys that already triggered sourceFound
         self._mtp_mount_attempts: dict[str, float] = {}  # activation uri -> last attempt time
+        self._gvfs_fuse_last_check = 0.0
         self._bus = None
         if dbus is not None:
             try:
@@ -292,18 +340,29 @@ class DeviceWatcher(QObject):
 
     def _poll_gvfs_devices(self) -> None:
         gvfs_dir = _gvfs_dir()
+        now = time.monotonic()
+        if now - self._gvfs_fuse_last_check >= GVFS_FUSE_CHECK_RETRY_S:
+            self._gvfs_fuse_last_check = now
+            _ensure_gvfs_fuse_running(gvfs_dir)
         try:
-            gvfs_dirs = {p.name for p in gvfs_dir.iterdir() if p.name.startswith(("mtp:host=", "afc:host="))} \
-                if gvfs_dir.is_dir() else set()
+            # An AFC dirname with ",port=" is a specific app's sandboxed
+            # Documents folder (the same thing Finder/Files shows as "On
+            # My iPhone" per-app sharing), not the device's main share --
+            # confirmed against a real iPhone: never has a DCIM folder,
+            # just noise (a photo-less "device" card) for this app.
+            gvfs_dirs = {
+                p.name for p in gvfs_dir.iterdir()
+                if p.name.startswith(("mtp:host=", "afc:host="))
+                and not (p.name.startswith("afc:host=") and ",port=" in p.name)
+            } if gvfs_dir.is_dir() else set()
         except OSError:
             gvfs_dirs = set()
 
-        friendly_names = _gio_mount_names() if gvfs_dirs else {}
         current_keys = {f"gvfs-dir:{name}" for name in gvfs_dirs}
         for name in gvfs_dirs:
             key = f"gvfs-dir:{name}"
             root = str(gvfs_dir / name)
-            label = friendly_names.get(name) or _gvfs_fallback_label(name)
+            label = _gio_display_name(Path(root)) or _gvfs_fallback_label(name)
             # "iphone" is only ever used for the in-memory registry/source
             # strip (a nicer icon) -- sourceFound below always reports
             # "mtp" so it stays a value the sessions table's CHECK

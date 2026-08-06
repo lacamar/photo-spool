@@ -1,5 +1,5 @@
 Name:           photo-import
-Version:        0.2.17
+Version:        0.2.18
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -24,10 +24,19 @@ Requires:       perl-Image-ExifTool
 Requires:       ffmpeg-free
 Requires:       xdg-utils
 Requires:       hicolor-icon-theme
-# Optional: camera/phone-as-MTP-or-AFC-device support (backend/device_watch.py
-# degrades gracefully -- SD-card-reader import still works fully without them).
-Recommends:     gvfs-mtp
-Recommends:     gvfs-afc
+# Camera-as-MTP and iPhone-as-AFC support are advertised, first-class
+# features (not an optional edge case), so these are hard Requires, not
+# Recommends -- confirmed live against a real iPhone that a system with
+# install_weak_deps=False (this machine's own dnf.conf) silently never
+# installed gvfs-mtp/gvfs-afc at all via a plain Recommends, and that
+# gvfs-fuse (needed for an MTP/AFC mount to appear as a real POSIX path
+# to anything, not just be visible to `gio`) was missing from this spec
+# entirely. SD-card-reader import still works without any of these
+# (backend/device_watch.py degrades quietly), only MTP/AFC detection
+# needs them.
+Requires:       gvfs-mtp
+Requires:       gvfs-afc
+Requires:       gvfs-fuse
 # Optional: raw-Wayland compositor-blur detection (progressive enhancement,
 # app works fine without it -- see backend/blur.py).
 Recommends:     python3-pywayland
@@ -123,6 +132,36 @@ done
 %{_userunitdir}/%{name}.service
 
 %changelog
+* Thu Aug 06 2026 Photo Import <noreply@example.com> - 0.2.18-1
+- Fixed iPhone detection not working at all, root-caused live against a
+  real device:
+  - gvfs-mtp/gvfs-afc were never actually installed on this machine --
+    install_weak_deps=False in dnf.conf means a plain Recommends silently
+    does nothing. Promoted both to hard Requires, since MTP/AFC support
+    is an advertised core feature, not an optional edge case.
+  - Even with those installed, gio mounted the iPhone's AFC share fine
+    at the GVfs API level, but it never appeared as a real file under
+    $XDG_RUNTIME_DIR/gvfs, because gvfsd-fuse was never running --
+    nothing starts it automatically outside a full GNOME session (a bare
+    niri session, confirmed on this machine, has no such autostart, and
+    gvfs-fuse itself ships only the binary, no unit/autostart entry).
+    device_watch.py now checks /proc/mounts and self-starts gvfsd-fuse if
+    it's not already serving that directory -- same self-managed-
+    dependency approach as dnglab's self-download. Added gvfs-fuse as a
+    new Requires too.
+  - Fixed the device's display name coming back empty/falling back to
+    the raw UDID: the old lookup cross-referenced `gio mount -li`'s
+    free-text name against a dirname reconstructed from a
+    default_location= URI, which breaks for AFC (that URI always ends in
+    "/", so the reconstructed dirname came back empty) and wasn't
+    actually correlatable to the real "afc:host=..." directory name to
+    begin with. Now reads the name directly off the already-discovered
+    path via `gio info`, which is both simpler and correct.
+  - An iPhone's "Files > On My iPhone" per-app document shares (e.g.
+    every installed app's sandboxed Documents folder) were also showing
+    up as their own separate, photo-less "device" card -- filtered out,
+    since only the device's main AFC share ever has a DCIM folder.
+
 * Thu Aug 06 2026 Photo Import <noreply@example.com> - 0.2.17-1
 - The systemd service now launches quietly: new --start-hidden flag
   (main.py) skips showing the window on launch (just the tray icon),

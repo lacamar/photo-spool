@@ -10,7 +10,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Property, QObject, QUrl, Signal, Slot
 
-from . import __version__, db, device_watch, dnglab_setup, notifications, paths, settings_store
+from . import __version__, db, device_watch, dnglab_setup, notifications, paths, scanner, settings_store
 from .blur import compositor_supports_blur
 from .import_worker import ImportRequest, ImportWorker
 from .list_models import NotificationListModel, SessionListModel, SourceListModel
@@ -167,12 +167,24 @@ class AppController(QObject):
         self._import_worker.submit(request)
         self.activeSessionChanged.emit()
 
+    def _submit_mark_only(self, request: ImportRequest) -> None:
+        # Deliberately bypasses _queued_count/activeSessionChanged --
+        # "mark as already imported" should never show up in the top
+        # status bar or the "+N more queued" text. See
+        # _on_session_started/_on_session_finished for the matching
+        # skip on the way out.
+        self._import_worker.submit(request)
+
     def _on_session_started(self, session_id: int) -> None:
+        row = self._conn.execute(
+            "SELECT device_label, mark_only FROM sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+        if row is None or row["mark_only"]:
+            return  # quiet: never a history card, never takes over the status bar
         self.sessionModel.upsert(session_id, self._conn)
         self._queued_count = max(self._queued_count - 1, 0)
-        row = self._conn.execute("SELECT device_label FROM sessions WHERE id = ?", (session_id,)).fetchone()
         self._active_session_id = session_id
-        self._active_label = row["device_label"] if row else ""
+        self._active_label = row["device_label"]
         self._active_phase = ""
         self._active_done = 0
         self._active_total = 0
@@ -189,17 +201,19 @@ class AppController(QObject):
             self.activeSessionChanged.emit()
 
     def _on_session_finished(self, session_id: int) -> None:
-        self.sessionModel.upsert(session_id, self._conn)
+        row = self._conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        if row is None:
+            return
         # Re-scan the source's card so its "N new" count reflects what
-        # just got imported, without waiting for the user to hit refresh.
-        source_root_row = self._conn.execute(
-            "SELECT source_root FROM sessions WHERE id = ?", (session_id,)
-        ).fetchone()
-        source_root = source_root_row["source_root"] if source_root_row else None
-        if source_root:
+        # just happened, without waiting for the user to hit refresh --
+        # for both real imports and quiet mark-as-owned sessions.
+        if row["source_root"]:
             for entry in self.sourcesModel.all_entries():
-                if entry["mounted"] and entry["rootPath"] == source_root:
+                if entry["mounted"] and entry["rootPath"] == row["source_root"]:
                     self._stats_worker.request(entry["sourceKey"], entry["rootPath"])
+        if row["mark_only"]:
+            return  # quiet: no history card, no notification, status bar was never touched
+        self.sessionModel.upsert(session_id, self._conn)
         if session_id == self._active_session_id:
             self._active_session_id = -1
             self._active_label = ""
@@ -208,9 +222,6 @@ class AppController(QObject):
             self._active_total = 0
             self._active_file = ""
             self.activeSessionChanged.emit()
-        row = self._conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
-        if row is None:
-            return
         if row["status"] == "failed":
             text = f"{row['device_label']}: import failed -- {row['error_message'] or 'unknown error'}"
             kind = "error"
@@ -245,6 +256,45 @@ class AppController(QObject):
             }
             for r in rows
         ]
+
+    @Slot(result='QVariantMap')
+    def getLibraryStats(self) -> dict:
+        """Lifetime stats from the `imports` table -- the persistent dedup
+        ledger, which (unlike the sessions/session_files history) is never
+        touched by clearing history, so these numbers survive that. Rows
+        with an empty dest_path are "mark as already imported" entries
+        (nothing was ever actually copied by this app) and are counted
+        separately rather than folded into the totals below."""
+        totals = self._conn.execute(
+            "SELECT COUNT(*) AS n, COALESCE(SUM(dest_bytes), 0) AS dest_bytes, "
+            "COALESCE(SUM(source_bytes), 0) AS source_bytes, MIN(captured_at) AS earliest, "
+            "MAX(captured_at) AS latest FROM imports WHERE dest_path != ''"
+        ).fetchone()
+        marked_only_count = self._conn.execute(
+            "SELECT COUNT(*) AS n FROM imports WHERE dest_path = ''"
+        ).fetchone()["n"]
+        by_model_rows = self._conn.execute(
+            "SELECT camera_model, COUNT(*) AS n, COALESCE(SUM(dest_bytes), 0) AS bytes FROM imports "
+            "WHERE dest_path != '' GROUP BY camera_model ORDER BY n DESC"
+        ).fetchall()
+        dest_paths = self._conn.execute(
+            "SELECT dest_path FROM imports WHERE dest_path != ''"
+        ).fetchall()
+        video_count = sum(1 for r in dest_paths if scanner.is_video(Path(r["dest_path"])))
+        return {
+            "totalCount": totals["n"],
+            "totalBytes": totals["dest_bytes"],
+            "bytesSaved": max(totals["source_bytes"] - totals["dest_bytes"], 0),
+            "earliestCapturedAt": totals["earliest"] or "",
+            "latestCapturedAt": totals["latest"] or "",
+            "photoCount": totals["n"] - video_count,
+            "videoCount": video_count,
+            "markedOnlyCount": marked_only_count,
+            "byModel": [
+                {"model": r["camera_model"] or "Unknown", "count": r["n"], "bytes": r["bytes"]}
+                for r in by_model_rows
+            ],
+        }
 
     @Slot(str)
     def openFile(self, dest_path: str) -> None:
@@ -403,13 +453,14 @@ class AppController(QObject):
         """Records these files in the dedup ledger without converting or
         copying anything -- for photos this app never imported itself
         (e.g. ones Lightroom already handled) that would otherwise show up
-        as "new" every time this source is scanned."""
+        as "new" every time this source is scanned. Deliberately quiet: no
+        history card, no notification -- see _submit_mark_only."""
         resolved = self._resolve_selection(source_key, filenames)
         if resolved is None:
             return
         entry, names = resolved
         kind = {"folder": "manual", "iphone": "mtp"}.get(entry["kind"], entry["kind"])
-        self._submit_import(ImportRequest(
+        self._submit_mark_only(ImportRequest(
             source_root=entry["rootPath"], device_label=entry["label"] + " (marked, not imported)",
             kind=kind, selected_filenames=names, mark_only=True,
         ))

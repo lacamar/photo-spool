@@ -91,6 +91,35 @@ MIGRATIONS: Sequence[Sequence[str]] = (
         )
         """,
     ),
+    # --- v2 -> v3: "mark as already imported" becomes a quiet session
+    # (sessions.mark_only) that AppController skips surfacing as a history
+    # card or notification. And since clearing history deletes sessions
+    # rows, imports.session_id needs to survive that -- switched from
+    # NOT NULL / ON DELETE CASCADE to nullable / ON DELETE SET NULL so the
+    # dedup ledger (and lifetime stats) outlive a cleared session. SQLite
+    # can't ALTER a column's constraints in place, hence the rebuild.
+    (
+        "ALTER TABLE sessions ADD COLUMN mark_only INTEGER NOT NULL DEFAULT 0",
+        """
+        CREATE TABLE imports_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_hash TEXT NOT NULL UNIQUE,
+            source_filename TEXT NOT NULL,
+            source_bytes INTEGER NOT NULL,
+            camera_model TEXT NOT NULL DEFAULT '',
+            captured_at TEXT,
+            dest_path TEXT NOT NULL,
+            dest_bytes INTEGER NOT NULL,
+            session_id INTEGER REFERENCES sessions(id) ON DELETE SET NULL,
+            imported_at TEXT NOT NULL
+        )
+        """,
+        "INSERT INTO imports_new SELECT * FROM imports",
+        "DROP TABLE imports",
+        "ALTER TABLE imports_new RENAME TO imports",
+        "CREATE INDEX idx_imports_quickmatch ON imports(camera_model, source_filename, source_bytes)",
+        "CREATE INDEX idx_imports_session ON imports(session_id)",
+    ),
 )
 
 

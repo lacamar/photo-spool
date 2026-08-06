@@ -51,10 +51,14 @@ class SessionListModel(QAbstractListModel):
         self._entries: list[dict] = []
 
     def load(self, conn: sqlite3.Connection) -> None:
+        # mark_only ("Have it") sessions are deliberately quiet -- see
+        # AppController._on_session_started/_finished, which never call
+        # upsert() for one during a live run. Filtered here too so an
+        # app restart doesn't suddenly surface old ones as history cards.
         self.beginResetModel()
         self._entries = [
             _session_row_to_entry(row)
-            for row in conn.execute("SELECT * FROM sessions ORDER BY id DESC")
+            for row in conn.execute("SELECT * FROM sessions WHERE mark_only = 0 ORDER BY id DESC")
         ]
         self.endResetModel()
 

@@ -119,9 +119,9 @@ class ImportWorker(QThread):
         started_at = datetime.now(timezone.utc).isoformat()
         with conn:
             cur = conn.execute(
-                "INSERT INTO sessions (started_at, device_label, source_root, kind, status) "
-                "VALUES (?, ?, ?, ?, 'running')",
-                (started_at, request.device_label, request.source_root, request.kind),
+                "INSERT INTO sessions (started_at, device_label, source_root, kind, status, mark_only) "
+                "VALUES (?, ?, ?, ?, 'running', ?)",
+                (started_at, request.device_label, request.source_root, request.kind, request.mark_only),
             )
         session_id = cur.lastrowid
         self.sessionStarted.emit(session_id)

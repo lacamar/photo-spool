@@ -1,5 +1,5 @@
 Name:           photo-import
-Version:        0.2.13
+Version:        0.2.14
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -97,6 +97,30 @@ for path in sys.argv[1:]:
 %{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
 
 %changelog
+* Thu Aug 06 2026 Photo Import <noreply@example.com> - 0.2.14-1
+- "Mark as already imported" is now quiet: it no longer creates a
+  history card, an in-app notification, or a native desktop notification
+  -- it just records the dedup ledger entry in the background
+  (sessions.mark_only, filtered out of the history list/status bar).
+- Fixed a latent bug this surfaced: imports.session_id was NOT NULL with
+  ON DELETE CASCADE, so clearing a session from history (added in 0.2.10)
+  silently deleted its dedup-ledger rows too, meaning cleared files would
+  look "new" again on the next scan. session_id is now nullable / ON
+  DELETE SET NULL, so the ledger (and the new stats below) survive
+  clearing history.
+- Source picker: the "Mark unselected as already imported" bulk action
+  is now "Mark selected as already imported", using the same checkbox
+  selection the "Import N selected" button already uses -- select once,
+  then choose which of the two actions applies to that selection.
+- New library stats page (📊 in the header): lifetime totals (files,
+  storage, photos vs. videos, date range) and a per-camera breakdown,
+  computed from the persistent dedup ledger so it survives history
+  clears.
+- Fixed a MouseArea stacking bug in the source strip: the whole-tile
+  click-to-open area was declared after (and so on top of) a pinned
+  folder's "✕" remove button, silently swallowing every click on it --
+  removing a folder has never actually worked until this fix.
+
 * Thu Aug 06 2026 Photo Import <noreply@example.com> - 0.2.13-1
 - Tray icon behavior split by click: left-click (Trigger) now checks for
   new importable media (appController.refreshDevices()) and confirms with

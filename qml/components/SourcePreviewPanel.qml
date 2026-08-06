@@ -136,18 +136,20 @@ Rectangle {
                     onClicked: root.setAll(false) }
             }
             Text {
+                // Same selection the Import button below uses -- check the
+                // ones you already have, then pick which of the two
+                // actions applies to that selection, instead of the old
+                // inverted "mark whatever's left unchecked" flow.
                 visible: !root.loading && root.items.length > 0
-                text: "Mark unselected as already imported"
+                text: "Mark selected as already imported"
                 color: Theme.textSecondary
+                opacity: root.selectedCount > 0 ? 1.0 : 0.5
                 font.pixelSize: 11
                 MouseArea {
                     anchors.fill: parent; anchors.margins: -4; cursorShape: Qt.PointingHandCursor
                     onClicked: {
                         var names = []
-                        for (var i = 0; i < root.items.length; i++) {
-                            var it = root.items[i]
-                            if (!it.alreadyImported && !root.selected[it.filename]) names.push(it.filename)
-                        }
+                        for (var key in root.selected) if (root.selected[key]) names.push(key)
                         root.markOwned(names)
                     }
                 }

@@ -187,6 +187,18 @@ Item {
                 }
             }
 
+            MouseArea {
+                id: tileMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.sourceClicked(model.sourceKey, model.label)
+            }
+
+            // Declared after tileMouse (and so stacked on top of it) --
+            // otherwise the whole-tile MouseArea above swallows every
+            // click in this corner, including the remove button's own,
+            // making it look clickable but do nothing.
             Text {
                 visible: model.removable
                 text: "✕"
@@ -203,14 +215,6 @@ Item {
                     cursorShape: Qt.PointingHandCursor
                     onClicked: appController.removeFolder(model.sourceKey)
                 }
-            }
-
-            MouseArea {
-                id: tileMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: root.sourceClicked(model.sourceKey, model.label)
             }
         }
 

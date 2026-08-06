@@ -10,6 +10,7 @@ already extracted.
 """
 from __future__ import annotations
 
+import logging
 import re
 import subprocess
 from datetime import date
@@ -18,7 +19,11 @@ from typing import Callable
 
 from . import scanner
 
+logger = logging.getLogger(__name__)
+
 CONVERT_TIMEOUT_S = 60 * 30
+DNG_VERSION_TIMEOUT_S = 30
+DNG_BACKWARD_VERSION = "1.4.0.0"
 _UNSAFE_CHARS_RE = re.compile(r"[^A-Za-z0-9._+-]")
 _CONVERTED_RE = re.compile(r"Status: Converted '([^']+)' =>")
 
@@ -61,6 +66,24 @@ def convert_batch(dnglab_path: Path, staging_in: Path, staging_out: Path, compre
         proc.wait()
         tail.append("Conversion timed out\n")
     return proc.returncode, "".join(tail)
+
+
+def set_dng_backward_version(path: Path) -> None:
+    """Rewrites DNGBackwardVersion to 1.4.0.0 in place, for every DNG that
+    lands in the library -- both dnglab's own conversions and DNG-
+    passthrough files (iPhone ProRAW, cameras that shoot DNG natively),
+    which can arrive tagged with a newer DNG spec version than some tools
+    understand. Same fix as ~/.local/bin/dng-version-converter, applied at
+    import time instead of as a separate manual pass. Non-fatal on
+    failure -- the file is already correctly placed either way, so a
+    exiftool hiccup here shouldn't fail the whole import."""
+    try:
+        subprocess.run(
+            ["exiftool", f"-DNGBackwardVersion={DNG_BACKWARD_VERSION}", "-overwrite_original", "-P", str(path)],
+            capture_output=True, text=True, timeout=DNG_VERSION_TIMEOUT_S, check=True,
+        )
+    except (subprocess.CalledProcessError, OSError, subprocess.TimeoutExpired):
+        logger.warning("Could not set DNGBackwardVersion on %s", path, exc_info=True)
 
 
 def library_dest_path(library_root: Path, candidate: "scanner.Candidate") -> Path:

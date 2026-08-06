@@ -1,5 +1,5 @@
 Name:           photo-import
-Version:        0.2.10
+Version:        0.2.11
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -93,6 +93,16 @@ for path in sys.argv[1:]:
 %{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
 
 %changelog
+* Thu Aug 06 2026 Photo Import <noreply@example.com> - 0.2.11-1
+- Every DNG landing in the library (both dnglab's own conversions and
+  DNG-passthrough files like iPhone ProRAW) now has its DNGBackwardVersion
+  tag rewritten to 1.4.0.0 in place via exiftool right after it's placed,
+  for compatibility with tools that don't understand newer DNG spec
+  versions -- same fix as the existing standalone
+  ~/.local/bin/dng-version-converter script, now applied automatically at
+  import time instead of as a separate manual pass. Non-fatal if exiftool
+  fails on a given file -- the file stays correctly placed either way.
+
 * Thu Aug 06 2026 Photo Import <noreply@example.com> - 0.2.10-1
 - Session detail rows: default click now opens the file itself in the
   desktop's default image viewer (xdg-open on the file); a new small

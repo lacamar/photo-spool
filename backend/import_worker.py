@@ -284,6 +284,7 @@ class ImportWorker(QThread):
                 self._record_file(conn, session_id, cand.path.name, "failed", "", str(exc), order)
                 return
 
+            converter.set_dng_backward_version(dest)
             dest_bytes = dest.stat().st_size
             now = datetime.now(timezone.utc).isoformat()
             try:

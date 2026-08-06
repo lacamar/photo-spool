@@ -1,5 +1,5 @@
 Name:           photo-import
-Version:        0.2.16
+Version:        0.2.17
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -98,6 +98,15 @@ for path in sys.argv[1:]:
 
 %post
 %systemd_user_post %{name}.service
+# Immediately restart for every currently logged-in user who has it
+# enabled/running, so installing an update actually takes effect right
+# away instead of waiting for the user to remember to do it by hand.
+# try-restart is a safe no-op for anyone who never enabled it.
+loginctl list-users --no-legend 2>/dev/null | while read -r uid user _; do
+    [ -S "/run/user/${uid}/bus" ] || continue
+    XDG_RUNTIME_DIR="/run/user/${uid}" runuser -u "$user" -- \
+        systemctl --user try-restart %{name}.service >/dev/null 2>&1 || :
+done
 
 %preun
 %systemd_user_preun %{name}.service
@@ -114,6 +123,19 @@ for path in sys.argv[1:]:
 %{_userunitdir}/%{name}.service
 
 %changelog
+* Thu Aug 06 2026 Photo Import <noreply@example.com> - 0.2.17-1
+- The systemd service now launches quietly: new --start-hidden flag
+  (main.py) skips showing the window on launch (just the tray icon),
+  wired into photo-import.service's ExecStart. A manual launch (desktop
+  icon, terminal) is unaffected -- the window still opens immediately as
+  before. Previously the service opened the window on every start, same
+  as a normal launch.
+- %post now immediately restarts the service (systemctl --user
+  try-restart, a no-op for anyone who never enabled it) for every
+  currently logged-in user, so a package upgrade actually takes effect
+  right away instead of requiring a manual restart or waiting for next
+  login.
+
 * Thu Aug 06 2026 Photo Import <noreply@example.com> - 0.2.16-1
 - Added a systemd *user* service (packaging/photo-import.service):
   starts the app in the background and restarts it (Restart=on-failure,

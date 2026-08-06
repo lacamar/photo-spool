@@ -8,7 +8,12 @@ import "components"
 
 Window {
     id: window
-    visible: true
+    // One-time read of the startHidden context property (main.py) --
+    // avoids a visible flash-then-hide when launched via the systemd
+    // service. Once shown/hidden imperatively (show_window() in main.py,
+    // or the tray/close-button handlers below), this initial binding is
+    // superseded like any other QML property binding.
+    visible: !startHidden
     width: 760
     height: 720
     minimumWidth: 480

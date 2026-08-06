@@ -7,7 +7,7 @@ StartLimitBurst=5
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/photo-import
+ExecStart=/usr/bin/photo-import --start-hidden
 Restart=on-failure
 RestartSec=5
 

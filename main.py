@@ -70,6 +70,10 @@ def _acquire_single_instance(app: QApplication) -> QLocalServer | None:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Photo Import")
     parser.add_argument("--demo", action="store_true", help="Seed demo session history if the database is empty")
+    parser.add_argument(
+        "--start-hidden", action="store_true",
+        help="Don't show the window on launch -- just the tray icon (used by the systemd user service)",
+    )
     args = parser.parse_args()
 
     # QApplication (not just QGuiApplication) so QtQuick.Dialogs' native
@@ -108,6 +112,10 @@ def main() -> int:
     context.setContextProperty("sessionModel", controller.sessionModel)
     context.setContextProperty("notificationModel", controller.notificationModel)
     context.setContextProperty("sourcesModel", controller.sourcesModel)
+    # Read once by Main.qml's initial `visible:` binding -- must be set
+    # before engine.load() below so the window is never shown for even a
+    # frame when starting hidden, rather than flashing open then closing.
+    context.setContextProperty("startHidden", args.start_hidden)
 
     app.aboutToQuit.connect(controller.shutdown)
 

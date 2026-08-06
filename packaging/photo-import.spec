@@ -1,5 +1,5 @@
 Name:           photo-import
-Version:        0.2.6
+Version:        0.2.7
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -93,6 +93,17 @@ for path in sys.argv[1:]:
 %{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
 
 %changelog
+* Thu Aug 06 2026 Photo Import <noreply@example.com> - 0.2.7-1
+- Thumbnails (session detail view and the source picker grid) now have
+  true squircle (superellipse) corners instead of a plain circular
+  border-radius -- rendered via a new SquircleImage component (Canvas-
+  drawn mask + MultiEffect GPU compositing).
+- Session detail rows now highlight on hover, matching their new
+  clickability (open-in-file-browser).
+- Source picker tile's filename caption is now an inset rounded chip
+  instead of a bar flush against the tile edges, so it doesn't clash with
+  the new corner curve.
+
 * Wed Aug 05 2026 Photo Import <noreply@example.com> - 0.2.6-1
 - App version is now shown at the bottom of the Settings page
   (backend/__init__.py's __version__ is the single source of truth --

@@ -51,11 +51,14 @@ Item {
                 width: ListView.view.width
                 implicitHeight: rowContent.implicitHeight + 12
                 radius: Theme.radiusSmall
-                color: Theme.chipBackground
+                color: rowMouse.containsMouse && rowMouse.enabled ? Theme.accentSoft : Theme.chipBackground
+                Behavior on color { ColorAnimation { duration: Theme.animFast } }
 
                 MouseArea {
+                    id: rowMouse
                     anchors.fill: parent
                     enabled: !!modelData.destPath
+                    hoverEnabled: true
                     cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                     onClicked: appController.openInFileBrowser(modelData.destPath)
                 }
@@ -66,23 +69,17 @@ Item {
                     anchors.margins: 8
                     spacing: 8
 
-                    Rectangle {
+                    SquircleImage {
                         Layout.preferredWidth: 36
                         Layout.preferredHeight: 36
                         Layout.alignment: Qt.AlignVCenter
-                        radius: Theme.radiusSmall
-                        color: Theme.surfaceElevated
-                        clip: true
-
-                        Image {
-                            anchors.fill: parent
-                            visible: !!modelData.destPath
-                            source: modelData.destPath ? "image://thumb/" + encodeURIComponent(modelData.destPath) : ""
-                            asynchronous: true
-                            fillMode: Image.PreserveAspectCrop
-                            sourceSize.width: 72
-                            sourceSize.height: 72
-                        }
+                        cornerRadius: Theme.radiusSmall
+                        placeholderColor: Theme.surfaceElevated
+                        source: modelData.destPath ? "image://thumb/" + encodeURIComponent(modelData.destPath) : ""
+                        asynchronous: true
+                        fillMode: Image.PreserveAspectCrop
+                        sourceSize.width: 72
+                        sourceSize.height: 72
                     }
 
                     Rectangle {

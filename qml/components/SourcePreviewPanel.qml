@@ -208,17 +208,15 @@ Rectangle {
                 width: grid.cellWidth
                 height: grid.cellHeight
 
-                Rectangle {
+                Item {
                     anchors.fill: parent
                     anchors.margins: 5
-                    radius: Theme.radiusSmall
-                    color: Theme.chipBackground
-                    clip: true
                     opacity: modelData.alreadyImported ? 0.4 : 1.0
 
-                    Image {
+                    SquircleImage {
                         anchors.fill: parent
-                        anchors.margins: 1
+                        cornerRadius: Theme.radiusMedium
+                        placeholderColor: Theme.chipBackground
                         source: "image://thumb/" + encodeURIComponent(modelData.path)
                         asynchronous: true
                         fillMode: Image.PreserveAspectCrop
@@ -237,9 +235,12 @@ Rectangle {
                     }
 
                     Rectangle {
+                        anchors.left: parent.left
+                        anchors.right: parent.right
                         anchors.bottom: parent.bottom
-                        width: parent.width
+                        anchors.margins: 5
                         height: nameText.implicitHeight + 6
+                        radius: Theme.radiusSmall
                         color: Qt.rgba(0, 0, 0, 0.55)
                         Text {
                             id: nameText

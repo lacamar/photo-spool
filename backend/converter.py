@@ -86,14 +86,17 @@ def set_dng_backward_version(path: Path) -> None:
         logger.warning("Could not set DNGBackwardVersion on %s", path, exc_info=True)
 
 
-def library_dest_path(library_root: Path, candidate: "scanner.Candidate") -> Path:
+def library_dest_path(library_root: Path, candidate: "scanner.Candidate", suffix: str) -> Path:
+    """`suffix` is the extension the placed file will actually have --
+    always ".dng" for a dnglab conversion, but the original extension for
+    anything passed through untouched (DNG passthrough, or a video)."""
     if candidate.captured_at:
         d = date.fromisoformat(candidate.captured_at[:10])
     else:
         d = date.fromtimestamp(candidate.path.stat().st_mtime)
     model = _sanitize(candidate.camera_model)
     seq = scanner.shot_number(candidate.path.name)
-    filename = f"{d.strftime('%Y.%m.%d')}_{model}_{seq}.dng"
+    filename = f"{d.strftime('%Y.%m.%d')}_{model}_{seq}{suffix}"
     return library_root / f"{d.year}" / d.strftime("%Y-%m") / d.strftime("%Y-%m-%d") / filename
 
 

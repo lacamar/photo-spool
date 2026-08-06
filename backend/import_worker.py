@@ -130,7 +130,7 @@ class ImportWorker(QThread):
         library_root = Path(settings["library_root"])
 
         try:
-            files = scanner.find_raw_files(Path(request.source_root))
+            files = scanner.find_importable_files(Path(request.source_root))
         except OSError as exc:
             self._finish_session(conn, session_id, "failed", error_message=str(exc))
             return
@@ -219,15 +219,16 @@ class ImportWorker(QThread):
         staging_in.mkdir(parents=True, exist_ok=True)
 
         # DNG sources (iPhone ProRAW, or a camera that already shoots DNG)
-        # need no conversion -- they're copied straight to the library.
-        # Everything else is staged for dnglab, keeping the source's own
-        # extension (dnglab may rely on it, not just file content, to pick
-        # a decoder for less-common formats).
+        # and videos need no conversion -- they're copied straight to the
+        # library, keeping their own extension. Everything else is staged
+        # for dnglab, keeping the source's own extension (dnglab may rely
+        # on it, not just file content, to pick a decoder for less-common
+        # formats).
         to_convert: list[tuple[str, scanner.Candidate, int]] = []
         to_copy: list[tuple[str, scanner.Candidate, int]] = []
         by_hash: dict[str, tuple[scanner.Candidate, int]] = {}
         for source_hash, cand, order in to_stage:
-            if scanner.is_dng(cand.path):
+            if scanner.is_dng(cand.path) or scanner.is_video(cand.path):
                 to_copy.append((source_hash, cand, order))
                 continue
             link = staging_in / f"{source_hash}{cand.path.suffix}"
@@ -273,7 +274,8 @@ class ImportWorker(QThread):
             nonlocal placed, bytes_saved
             placed += 1
             self.sessionProgress.emit(session_id, PHASE_PLACING, placed, total_to_place, cand.path.name)
-            dest = converter.unique_dest_path(converter.library_dest_path(library_root, cand))
+            dest_suffix = produced.suffix.lower()
+            dest = converter.unique_dest_path(converter.library_dest_path(library_root, cand, dest_suffix))
             try:
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 if move:
@@ -284,7 +286,8 @@ class ImportWorker(QThread):
                 self._record_file(conn, session_id, cand.path.name, "failed", "", str(exc), order)
                 return
 
-            converter.set_dng_backward_version(dest)
+            if dest_suffix == ".dng":
+                converter.set_dng_backward_version(dest)
             dest_bytes = dest.stat().st_size
             now = datetime.now(timezone.utc).isoformat()
             try:

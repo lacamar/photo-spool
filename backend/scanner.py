@@ -44,6 +44,16 @@ RAW_EXTENSIONS = {
     ".dng",                              # DNG passthrough (iPhone ProRAW, native-DNG cameras)
 }
 
+# Video formats the same cameras/iPhone produce alongside stills. These are
+# never touched by dnglab -- just renamed and filed like everything else
+# (see `is_video` below), so unlike RAW_EXTENSIONS there's no decode-
+# compatibility concern gating what belongs here.
+VIDEO_EXTENSIONS = {
+    ".mp4", ".mov", ".m4v",              # most cameras and phones, incl. iPhone
+    ".mts", ".m2ts",                     # AVCHD (older Sony/Panasonic camcorders)
+    ".avi",                              # legacy
+}
+
 
 @dataclass
 class Candidate:
@@ -60,10 +70,18 @@ def is_dng(path: Path) -> bool:
     return path.suffix.lower() == ".dng"
 
 
-def find_raw_files(root: Path) -> list[Path]:
+def is_video(path: Path) -> bool:
+    """Videos are never converted -- copied straight through like a DNG,
+    keeping their original extension, just renamed into the library
+    alongside the stills from the same shoot."""
+    return path.suffix.lower() in VIDEO_EXTENSIONS
+
+
+def find_importable_files(root: Path) -> list[Path]:
+    extensions = RAW_EXTENSIONS | VIDEO_EXTENSIONS
     return sorted(
         p for p in root.rglob("*")
-        if p.is_file() and p.suffix.lower() in RAW_EXTENSIONS and not p.name.startswith(".")
+        if p.is_file() and p.suffix.lower() in extensions and not p.name.startswith(".")
     )
 
 
@@ -77,7 +95,9 @@ def read_metadata(files: list[Path]) -> dict[Path, Candidate]:
         argfile_path = argfile.name
     try:
         result = subprocess.run(
-            ["exiftool", "-@", argfile_path, "-j", "-Model", "-DateTimeOriginal", "-FileSize#"],
+            # -CreateDate is the fallback for video files, most of which
+            # have no -DateTimeOriginal (an EXIF/still-photo tag) at all.
+            ["exiftool", "-@", argfile_path, "-j", "-Model", "-DateTimeOriginal", "-CreateDate", "-FileSize#"],
             capture_output=True, text=True, timeout=EXIFTOOL_BATCH_TIMEOUT_S,
         )
     finally:
@@ -109,7 +129,7 @@ def read_metadata(files: list[Path]) -> dict[Path, Candidate]:
             path=path,
             size_bytes=int(size),
             camera_model=str(rec.get("Model") or "").strip(),
-            captured_at=_parse_exif_datetime(rec.get("DateTimeOriginal")),
+            captured_at=_parse_exif_datetime(rec.get("DateTimeOriginal")) or _parse_exif_datetime(rec.get("CreateDate")),
         )
     return out
 

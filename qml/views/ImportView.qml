@@ -207,7 +207,7 @@ Item {
                 Layout.alignment: Qt.AlignHCenter
             }
             Text {
-                text: "New raw files are converted to lossless DNG and filed into your library automatically."
+                text: "New raw files are converted to lossless DNG, and videos are filed alongside them, automatically."
                 color: Theme.textSecondary
                 font.pixelSize: 11
                 Layout.alignment: Qt.AlignHCenter

@@ -281,7 +281,7 @@ Rectangle {
                         border.color: "white"
 
                         Text {
-                            visible: root.selected[modelData.filename]
+                            visible: !!root.selected[modelData.filename]
                             anchors.centerIn: parent
                             text: "✓"
                             color: "white"

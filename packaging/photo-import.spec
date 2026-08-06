@@ -1,5 +1,5 @@
 Name:           photo-import
-Version:        0.2.11
+Version:        0.2.12
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -36,10 +36,13 @@ camera (mass storage or MTP), or an iPhone (AFC) being connected, and
 imports new raw photos: ARW/CR2/CR3/NEF/RAF/RW2/ORF/PEF are converted to
 lossless-compressed DNG (via a self-managed dnglab binary, downloaded on
 first use -- no Adobe DNG Converter needed on Linux); files already in DNG
-form (e.g. iPhone ProRAW) are copied straight through. Everything is filed
-into the existing photo library using the same
-YYYY/YYYY-MM/YYYY-MM-DD/YYYY.MM.DD_Model_NNNNN.dng convention Lightroom was
-already using. A source strip shows every attached device plus manually
+form (e.g. iPhone ProRAW) are copied straight through. Video files
+(MP4/MOV/M4V/MTS/M2TS/AVI) are filed alongside the stills too, untouched
+-- just renamed into place, no conversion. Everything is filed into the
+existing photo library using the same
+YYYY/YYYY-MM/YYYY-MM-DD/YYYY.MM.DD_Model_NNNNN convention Lightroom was
+already using (with each file's own original extension). A source strip
+shows every attached device plus manually
 pinned folders as clickable icons; opening one shows a thumbnail picker
 with already-imported shots greyed out (or markable as already-imported
 without re-processing them) and everything else preselected. Content-hash
@@ -93,6 +96,24 @@ for path in sys.argv[1:]:
 %{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
 
 %changelog
+* Thu Aug 06 2026 Photo Import <noreply@example.com> - 0.2.12-1
+- Video files (MP4/MOV/M4V/MTS/M2TS/AVI) are now imported alongside
+  stills: discovered, deduped, and filed into the library using the same
+  YYYY.MM.DD_Model_NNNNN naming convention, but never touched by dnglab
+  -- just renamed and copied through with their original extension, same
+  passthrough path DNG-source files already used. Metadata reads now fall
+  back to CreateDate when a file has no DateTimeOriginal (the normal case
+  for video), so dates/folders come out right for those too. The new
+  DNGBackwardVersion rewrite from 0.2.11 no longer runs against non-DNG
+  destinations.
+- Fixed two real QML bugs surfaced by an actual run's stderr log: the
+  source picker's selection checkmark warned "Unable to assign
+  [undefined] to bool" for any file whose selection-map entry had been
+  removed (e.g. after "Have it"); and clicking a notification threw
+  "model is not defined" and silently failed to navigate to its session,
+  because markNotificationRead's synchronous model reset was destroying
+  the clicked delegate's context before the next line read it.
+
 * Thu Aug 06 2026 Photo Import <noreply@example.com> - 0.2.11-1
 - Every DNG landing in the library (both dnglab's own conversions and
   DNG-passthrough files like iPhone ProRAW) now has its DNGBackwardVersion

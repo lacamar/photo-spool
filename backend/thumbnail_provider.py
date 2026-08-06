@@ -1,9 +1,11 @@
 """Serves `image://thumb/<url-encoded-absolute-path>` by extracting the
-embedded JPEG preview from an ARW file via `exiftool -b -PreviewImage` --
+embedded JPEG preview from a raw/DNG file via `exiftool -b -PreviewImage` --
 fast (well under 100ms per file in testing) since it reads only the
 embedded preview, never the raw sensor data. Used for the source picker's
 thumbnail grid; QML's `Image { asynchronous: true }` runs this off the GUI
-thread automatically."""
+thread automatically. Video files have no such tag, so this comes back
+empty for them -- callers just fall back to their placeholder tile, which
+is fine since a thumbnail was never the point for a video."""
 from __future__ import annotations
 
 import logging

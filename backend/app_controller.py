@@ -357,7 +357,7 @@ class AppController(QObject):
 
     @Slot(str)
     def requestPreview(self, source_key: str) -> None:
-        """Scans a source for ARW files and their dedup status (fast --
+        """Scans a source for importable files and their dedup status (fast --
         metadata + a cheap pre-check, no content hashing) and reports the
         result via `previewReady`. Mounts the device first if needed --
         this is also how "mount when prompted" happens: the prompt is the

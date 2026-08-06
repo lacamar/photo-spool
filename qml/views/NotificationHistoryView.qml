@@ -73,8 +73,12 @@ Item {
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: {
+                        // Capture before the call below -- markNotificationRead
+                        // triggers a synchronous model reset that can destroy
+                        // this delegate's `model` context before the next line runs.
+                        var targetSessionId = model.sessionId
                         appController.markNotificationRead(model.notificationId)
-                        if (model.sessionId >= 0) root.sessionSelected(model.sessionId)
+                        if (targetSessionId >= 0) root.sessionSelected(targetSessionId)
                     }
                 }
             }

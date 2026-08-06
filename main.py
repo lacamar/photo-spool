@@ -143,7 +143,7 @@ def main() -> int:
         tray.setToolTip("Photo Import")
 
         tray_menu = QMenu()
-        show_action = QAction("Show Photo Import", tray_menu)
+        show_action = QAction("Open Photo Import", tray_menu)
         show_action.triggered.connect(show_window)
         tray_menu.addAction(show_action)
         tray_menu.addSeparator()
@@ -154,13 +154,16 @@ def main() -> int:
 
         def _on_tray_activated(reason):
             # Trigger is a plain left-click (the cross-platform "primary
-            # activation" reason) -- toggle instead of always-show so the
-            # tray icon doubles as a minimize button.
+            # activation" reason) -- checks for new importable media
+            # without needing to open the window at all; opening the
+            # window is now exclusively a right-click menu action (see
+            # show_action above), so a click never fights with the menu.
             if reason == QSystemTrayIcon.ActivationReason.Trigger:
-                if window.isVisible():
-                    window.hide()
-                else:
-                    show_window()
+                controller.refreshDevices()
+                tray.showMessage(
+                    "Photo Import", "Checked for new photos.",
+                    QSystemTrayIcon.MessageIcon.Information, 2500,
+                )
 
         tray.activated.connect(_on_tray_activated)
         tray.show()

@@ -1,5 +1,5 @@
 Name:           photo-import
-Version:        0.2.12
+Version:        0.2.13
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -20,6 +20,7 @@ Requires:       python3-dbus
 Requires:       glib2
 Requires:       udisks2
 Requires:       perl-Image-ExifTool
+Requires:       ffmpeg-free
 Requires:       xdg-utils
 Requires:       hicolor-icon-theme
 # Optional: camera/phone-as-MTP-or-AFC-device support (backend/device_watch.py
@@ -96,6 +97,18 @@ for path in sys.argv[1:]:
 %{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
 
 %changelog
+* Thu Aug 06 2026 Photo Import <noreply@example.com> - 0.2.13-1
+- Tray icon behavior split by click: left-click (Trigger) now checks for
+  new importable media (appController.refreshDevices()) and confirms with
+  a native tray balloon instead of toggling the window; opening the
+  window is now exclusively the right-click menu's "Open Photo Import"
+  action, so the two never fight over what a click does.
+- Video files now get a real thumbnail: they have no embedded-preview tag
+  for exiftool to read (confirmed empty against real iPhone .MOV and
+  camera .mp4 files), so the thumbnail provider now decodes one actual
+  frame via ffmpeg for video paths, used by both the source-picker grid
+  and the session-detail list. New Requires: ffmpeg-free.
+
 * Thu Aug 06 2026 Photo Import <noreply@example.com> - 0.2.12-1
 - Video files (MP4/MOV/M4V/MTS/M2TS/AVI) are now imported alongside
   stills: discovered, deduped, and filed into the library using the same

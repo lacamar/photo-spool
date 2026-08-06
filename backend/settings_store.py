@@ -9,7 +9,16 @@ from . import paths
 
 DEFAULTS: dict[str, Any] = {
     "theme_mode": "system",  # light | dark | system
-    "library_root": str(paths.default_library_root()),
+    # library_root deliberately isn't here -- it needs to read
+    # XDG_PICTURES_DIR fresh on every lookup (see _default_for), not once
+    # at module-import time. A module-level `paths.default_library_root()`
+    # call here would bake in whatever XDG_PICTURES_DIR happened to be set
+    # to the first time this module was ever imported in the process --
+    # invisible in normal use (the env var never changes mid-run), but a
+    # real hazard for anything that imports this module before setting up
+    # an isolated environment (confirmed the hard way: an early version of
+    # this project's test suite wrote real files into the real ~/Pictures
+    # because of exactly this).
     "watch_enabled": True,  # auto-detect + import on card/camera insert
     "mtp_enabled": True,  # also watch for the camera plugged in over USB/MTP
     "delete_originals_after_import": False,
@@ -20,10 +29,16 @@ DEFAULTS: dict[str, Any] = {
 }
 
 
+def _default_for(key: str) -> Any:
+    if key == "library_root":
+        return str(paths.default_library_root())
+    return DEFAULTS.get(key)
+
+
 def get(conn: sqlite3.Connection, key: str) -> Any:
     row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
     if row is None:
-        return DEFAULTS.get(key)
+        return _default_for(key)
     try:
         return json.loads(row["value"])
     except (json.JSONDecodeError, TypeError):
@@ -41,6 +56,7 @@ def set(conn: sqlite3.Connection, key: str, value: Any) -> None:
 
 def all_settings(conn: sqlite3.Connection) -> dict[str, Any]:
     merged = dict(DEFAULTS)
+    merged["library_root"] = _default_for("library_root")
     for row in conn.execute("SELECT key, value FROM settings"):
         try:
             merged[row["key"]] = json.loads(row["value"])

@@ -76,6 +76,15 @@ class AppController(QObject):
         self._active_file = ""
         self._queued_count = 0
         self._imports_paused = False
+        # source_root values with a queued or running session right now --
+        # ImportWorker itself already serializes everything onto one
+        # thread (never truly concurrent), but nothing stopped submitting
+        # a second request for a source that already has one in flight
+        # (e.g. reopening the picker and clicking Import again before the
+        # first request even starts), which just wastefully re-scans/
+        # re-hashes the same files back to back. Guarded at submission
+        # time instead.
+        self._in_flight_roots: set[str] = set()
 
         self._dnglab_ready = dnglab_setup.find_existing() is not None
         self._dnglab_worker: dnglab_setup.EnsureWorker | None = None
@@ -180,18 +189,28 @@ class AppController(QObject):
         self._notification_manager.send("Photo Import", text, transient=True)
         self._submit_import(ImportRequest(source_root=root, device_label=label, kind=kind))
 
-    def _submit_import(self, request: ImportRequest) -> None:
+    def _submit_import(self, request: ImportRequest) -> bool:
+        if request.source_root in self._in_flight_roots:
+            self.toast.emit(f"{request.device_label} is already importing.")
+            return False
+        self._in_flight_roots.add(request.source_root)
         self._queued_count += 1
         self._import_worker.submit(request)
         self.activeSessionChanged.emit()
+        return True
 
-    def _submit_mark_only(self, request: ImportRequest) -> None:
+    def _submit_mark_only(self, request: ImportRequest) -> bool:
         # Deliberately bypasses _queued_count/activeSessionChanged --
         # "mark as already imported" should never show up in the top
         # status bar or the "+N more queued" text. See
         # _on_session_started/_on_session_finished for the matching
         # skip on the way out.
+        if request.source_root in self._in_flight_roots:
+            self.toast.emit(f"{request.device_label} is already busy.")
+            return False
+        self._in_flight_roots.add(request.source_root)
         self._import_worker.submit(request)
+        return True
 
     def _on_session_started(self, session_id: int) -> None:
         row = self._conn.execute(
@@ -222,6 +241,7 @@ class AppController(QObject):
         row = self._conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
         if row is None:
             return
+        self._in_flight_roots.discard(row["source_root"])
         # Re-scan the source's card so its "N new" count reflects what
         # just happened, without waiting for the user to hit refresh --
         # for both real imports and quiet mark-as-owned sessions.

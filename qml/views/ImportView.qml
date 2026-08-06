@@ -147,7 +147,12 @@ Item {
         SourcePreviewPanel {
             id: previewPanel
             Layout.fillWidth: true
-            Layout.preferredHeight: 320
+            // Dominates the available space while open -- was a fixed
+            // 320 (only ~2 grid rows), which made browsing a source with
+            // any real number of photos on it painful. The history list
+            // below shrinks to a small peek instead of competing for
+            // room; it goes back to filling everything once this closes.
+            Layout.fillHeight: true
             visible: false
             onCloseRequested: previewPanel.visible = false
         }
@@ -155,7 +160,8 @@ Item {
         ListView {
             id: list
             Layout.fillWidth: true
-            Layout.fillHeight: true
+            Layout.fillHeight: !previewPanel.visible
+            Layout.preferredHeight: previewPanel.visible ? 150 : -1
             clip: true
             spacing: 10
             model: sessionModel

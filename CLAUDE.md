@@ -17,11 +17,28 @@ conventions).
 just run          # python3 main.py
 just demo         # python3 main.py --demo   (seeds demo session history if the DB is empty)
 just clean-db     # wipe the local sqlite DB ($XDG_DATA_HOME/photo-import/data.db)
+just test         # python3 -m unittest discover -s tests -v
 ./run.sh          # equivalent to `just run`, usable outside the repo root
 ```
 
-There is no automated test suite and no linter/formatter configured. Verification is done with ad-hoc,
-throwaway isolated harness scripts (see "Testing discipline" below) — there's no `tests/` directory to run.
+There's a real automated test suite under `tests/` (stdlib `unittest`, no extra dependency) covering
+`scanner.py`, `converter.py`, `settings_store.py`, `db.py`'s migrations, and `ImportWorker._run_session`
+called directly (never via `.start()`/a real `QThread`, and never against real hardware). Every test case
+inherits `tests.testutil.IsolatedTestCase`, which points every `XDG_*` var at a fresh temp directory for
+that test — **this is load-bearing, not a nicety**: an early version of this suite wrote real fake `.dng`
+files into the real `~/Pictures` because `settings_store.DEFAULTS["library_root"]` used to be computed once
+at module-import time (before any test's isolation took effect) instead of fresh per call — see
+`tests/test_settings_store.py`'s regression coverage for that exact bug and `settings_store._default_for`
+for the fix. Never write a test that calls `paths`/`settings_store`/`db` functions before
+`IsolatedTestCase.setUp()` has run. `no automated test suite` used to be true here; it no longer is, and
+`packaging/photo-import.spec`'s `%check` now runs this suite as part of every RPM build — a failing test
+fails the build, same as the existing `desktop-file-validate`/syntax checks there.
+
+**Never write a test that imports `backend.app_controller` or `backend.device_watch`** — both touch the
+real system D-Bus (and `DeviceWatcher` real attached hardware) regardless of `XDG_*` overrides, the same
+hazard "Testing discipline" below describes for manual harness scripts. `ImportWorker`/`scanner`/
+`converter`/`db`/`settings_store` are all safely testable in isolation; the device-detection and GUI layers
+are not, and stay covered by the manual/live-verification pattern below instead.
 
 To sanity-check Python syntax after editing without launching the GUI:
 ```bash

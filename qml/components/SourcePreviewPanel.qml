@@ -205,6 +205,17 @@ Rectangle {
             cellWidth: 132
             cellHeight: 132
             model: root.items
+            // Without these, GridView destroys and recreates every
+            // delegate (including its Image, discarding the already-
+            // decoded pixmap) the instant it scrolls out of view, then
+            // re-requests and re-decodes it the instant it scrolls back
+            // in -- the "thumbnails load and unload while scrolling"
+            // flicker. reuseItems keeps delegates alive and rebinds them
+            // to new model data instead of tearing down/rebuilding;
+            // cacheBuffer additionally keeps a margin of off-screen rows
+            // warm so fast scrolling doesn't even hit that path.
+            reuseItems: true
+            cacheBuffer: 600
 
             delegate: Item {
                 width: grid.cellWidth

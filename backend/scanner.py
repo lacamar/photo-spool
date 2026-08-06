@@ -194,6 +194,27 @@ def hash_file(path: Path) -> str:
     return h.hexdigest()
 
 
+def hash_and_stage(path: Path, dest: Path) -> str:
+    """Like hash_file, but also writes every chunk read to `dest` (a local
+    scratch/staging file -- never the final library placement, which is
+    the caller's job). Used so a file on a slow source (an iPhone's AFC
+    mount, confirmed live: video imports were taking dramatically longer
+    than photo imports of a similar count) only has to be read across
+    that slow connection once, whether it's then converted by dnglab or
+    copied through unchanged, instead of once here to hash it and again
+    later to actually place it. `dest`'s parent must already exist."""
+    h = hashlib.sha256()
+    try:
+        with open(path, "rb") as src, open(dest, "wb") as out:
+            while chunk := src.read(HASH_CHUNK_SIZE):
+                h.update(chunk)
+                out.write(chunk)
+    except OSError:
+        dest.unlink(missing_ok=True)
+        raise
+    return h.hexdigest()
+
+
 def quick_duplicate_match(conn: sqlite3.Connection, camera_model: str, filename: str, size_bytes: int) -> str | None:
     """Cheap pre-check (no hashing) so re-scanning a mostly-already-imported
     card doesn't re-hash every file on it -- only files that don't match on

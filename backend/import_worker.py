@@ -162,7 +162,35 @@ class ImportWorker(QThread):
 
         metadata = scanner.read_metadata(files)
         sort_order = 0
-        to_stage: list[tuple[str, scanner.Candidate, int]] = []  # (source_hash, candidate, sort_order)
+        # (source_hash, candidate, sort_order, staged_path). staged_path is
+        # None for mark_only requests (nothing ever reads it again -- see
+        # below), or the file's already-in-place local scratch copy for a
+        # real import, produced by hashing and staging in the same read.
+        to_stage: list[tuple[str, scanner.Candidate, int, Path | None]] = []
+
+        # Staged once here, up front, so a slow source (an iPhone's AFC
+        # mount, confirmed live: video imports took dramatically longer
+        # than photo imports of a similar count) is only ever read across
+        # that connection once -- whether the file then gets converted by
+        # dnglab or copied through unchanged -- instead of once here to
+        # hash it and again later to actually place it. mark_only never
+        # places anything, so it keeps the plain read-only hash instead;
+        # staging a local copy it'll never use would just waste local
+        # disk I/O for no benefit.
+        #
+        # Two separate staging dirs, not one: dnglab's directory-mode
+        # conversion processes *everything* it finds in its input dir, so
+        # a DNG-passthrough/video file staged alongside real conversion
+        # candidates would get pointlessly (and, for a large video,
+        # expensively) run through dnglab too. staging_in is exclusively
+        # dnglab's; staging_copy is exclusively for files headed straight
+        # to place_file untouched.
+        staging_root = paths.staging_dir() / f"session-{session_id}"
+        staging_in = staging_root / "in"
+        staging_copy = staging_root / "copy"
+        if not request.mark_only:
+            staging_in.mkdir(parents=True, exist_ok=True)
+            staging_copy.mkdir(parents=True, exist_ok=True)
 
         for i, f in enumerate(files):
             self._wait_if_paused()
@@ -179,17 +207,28 @@ class ImportWorker(QThread):
                 sort_order += 1
                 continue
             try:
-                source_hash = scanner.hash_file(cand.path)
+                if request.mark_only:
+                    source_hash = scanner.hash_file(cand.path)
+                    staged_path = None
+                else:
+                    needs_conversion = not (scanner.is_dng(cand.path) or scanner.is_video(cand.path))
+                    stage_dir = staging_in if needs_conversion else staging_copy
+                    tmp_staged = stage_dir / f"{sort_order}{cand.path.suffix}"
+                    source_hash = scanner.hash_and_stage(cand.path, tmp_staged)
+                    staged_path = stage_dir / f"{source_hash}{cand.path.suffix}"
+                    tmp_staged.replace(staged_path)
             except OSError as exc:
                 self._record_file(conn, session_id, f.name, "failed", "", str(exc), sort_order)
                 sort_order += 1
                 continue
             existing_dest = scanner.hash_duplicate_check(conn, source_hash)
             if existing_dest is not None:
+                if staged_path is not None:
+                    staged_path.unlink(missing_ok=True)  # already-known content -- discard the wasted local copy
                 self._record_file(conn, session_id, f.name, "duplicate", existing_dest, "", sort_order)
                 sort_order += 1
                 continue
-            to_stage.append((source_hash, cand, sort_order))
+            to_stage.append((source_hash, cand, sort_order, staged_path))
             sort_order += 1
 
         if not to_stage:
@@ -198,7 +237,7 @@ class ImportWorker(QThread):
 
         if request.mark_only:
             now = datetime.now(timezone.utc).isoformat()
-            for source_hash, cand, order in to_stage:
+            for source_hash, cand, order, _staged_path in to_stage:
                 self._wait_if_paused()
                 self.sessionProgress.emit(session_id, PHASE_PLACING, order + 1, len(to_stage), cand.path.name)
                 with conn:
@@ -213,29 +252,22 @@ class ImportWorker(QThread):
             self._finish_session(conn, session_id, "completed", ejectable_path=request.source_root)
             return
 
-        staging_root = paths.staging_dir() / f"session-{session_id}"
-        staging_in = staging_root / "in"
         staging_out = staging_root / "out"
-        staging_in.mkdir(parents=True, exist_ok=True)
 
         # DNG sources (iPhone ProRAW, or a camera that already shoots DNG)
-        # and videos need no conversion -- they're copied straight to the
-        # library, keeping their own extension. Everything else is staged
-        # for dnglab, keeping the source's own extension (dnglab may rely
-        # on it, not just file content, to pick a decoder for less-common
-        # formats).
+        # and videos need no conversion -- they're placed straight into the
+        # library, keeping their own extension. Everything else gets
+        # batch-converted by dnglab. Either way the file to use from here
+        # on is already the local staged copy from the checking loop above
+        # (named {hash}{suffix}, exactly what dnglab's directory mode
+        # expects for matching a converted output back to its source) --
+        # nothing here touches the original source again.
         to_convert: list[tuple[str, scanner.Candidate, int]] = []
-        to_copy: list[tuple[str, scanner.Candidate, int]] = []
+        to_copy: list[tuple[str, scanner.Candidate, int, Path]] = []
         by_hash: dict[str, tuple[scanner.Candidate, int]] = {}
-        for source_hash, cand, order in to_stage:
+        for source_hash, cand, order, staged_path in to_stage:
             if scanner.is_dng(cand.path) or scanner.is_video(cand.path):
-                to_copy.append((source_hash, cand, order))
-                continue
-            link = staging_in / f"{source_hash}{cand.path.suffix}"
-            try:
-                link.symlink_to(cand.path)
-            except OSError as exc:
-                self._record_file(conn, session_id, cand.path.name, "failed", "", str(exc), order)
+                to_copy.append((source_hash, cand, order, staged_path))
                 continue
             to_convert.append((source_hash, cand, order))
             by_hash[source_hash] = (cand, order)
@@ -334,9 +366,9 @@ class ImportWorker(QThread):
                 continue
             place_file(cand, order, source_hash, converted, move=True)
 
-        for source_hash, cand, order in to_copy:
+        for source_hash, cand, order, staged_path in to_copy:
             self._wait_if_paused()
-            place_file(cand, order, source_hash, cand.path, move=False)
+            place_file(cand, order, source_hash, staged_path, move=True)
 
         shutil.rmtree(staging_root, ignore_errors=True)
         with conn:

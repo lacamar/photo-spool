@@ -1,5 +1,5 @@
 Name:           photo-import
-Version:        0.2.21
+Version:        0.2.22
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -14,6 +14,14 @@ BuildRequires:  desktop-file-utils
 BuildRequires:  librsvg2-tools
 BuildRequires:  python3
 BuildRequires:  systemd-rpm-macros
+# For %check's unit test suite (tests/) -- mirrors the runtime Requires
+# below that the tests actually exercise (PySide6 for backend.import_worker
+# et al., exiftool/ffmpeg for converter.py's real subprocess calls). %check
+# runs in this build chroot, which only gets BuildRequires installed, not
+# Requires, so these need to be listed twice.
+BuildRequires:  python3-pyside6
+BuildRequires:  perl-Image-ExifTool
+BuildRequires:  ffmpeg-free
 
 Requires:       python3
 Requires:       python3-pyside6
@@ -111,6 +119,10 @@ for path in sys.argv[1:]:
     with open(path, encoding="utf-8") as fh:
         ast.parse(fh.read(), path)
 '
+# tests/ self-isolates (every test points XDG_* at a fresh tempdir -- see
+# tests/testutil.py), so this is safe to run as-is; a failure here fails
+# the whole build, same as the checks above.
+python3 -m unittest discover -s tests -v
 
 %post
 %systemd_user_post %{name}.service
@@ -139,6 +151,36 @@ done
 %{_userunitdir}/%{name}.service
 
 %changelog
+* Thu Aug 06 2026 Photo Import <noreply@example.com> - 0.2.22-1
+- Fixed videos taking dramatically longer to import than photos: every
+  file was being fully read twice over the source connection -- once to
+  hash it for dedup, again to either convert (dnglab) or copy it into
+  place -- and a video is much bigger than a RAW photo, so the same
+  relative inefficiency was far more painful for video. Files are now
+  hashed and staged to a local scratch copy in the same read
+  (scanner.hash_and_stage), and both the conversion and passthrough
+  paths place from that local copy instead of re-reading the original.
+- Source picker: no longer only ~2 rows visible -- the grid now fills
+  available space instead of a fixed 320px height, shrinking the session
+  history list to a small peek while open.
+- Fixed thumbnails visibly loading and unloading while scrolling the
+  picker grid: GridView had no cacheBuffer and wasn't reusing delegates,
+  so scrolling a tile off-screen and back destroyed and recreated its
+  Image (discarding the decoded pixmap) every single time.
+- Submitting a second import for a source that already has one queued or
+  running is now rejected with a toast instead of silently queuing a
+  redundant, wasteful re-scan/re-hash of the same files.
+- Added a real automated test suite (tests/, stdlib unittest, no new
+  dependency) covering scanner.py, converter.py, settings_store.py,
+  db.py's migrations, and ImportWorker._run_session directly -- wired
+  into `just test` and into this spec's %check, so a failing test now
+  fails the RPM build. Building this surfaced and fixed a real bug in
+  the test infrastructure itself: settings_store.DEFAULTS used to
+  compute library_root's default once at module-import time, so an
+  early version of this suite wrote fake .dng files into the real
+  ~/Pictures before the bug was caught and fixed (library_root's default
+  is now always computed fresh -- see settings_store._default_for).
+
 * Thu Aug 06 2026 Photo Import <noreply@example.com> - 0.2.21-1
 - Thumbnails are now cached to disk ($XDG_CACHE_HOME/photo-import/
   thumbnails), keyed by (path, mtime, size). A source with a large,

@@ -36,9 +36,14 @@ def bin_dir() -> Path:
 
 
 def staging_dir() -> Path:
-    """Scratch area for symlinked ARW inputs and dnglab's DNG outputs during
-    a single import run. Cleared at the start of every run; never relied on
-    to persist anything -- the DB is the source of truth."""
+    """Scratch area for locally-staged copies of source files (staged
+    while hashing them, so a slow source only needs one read -- see
+    scanner.hash_and_stage) and dnglab's DNG outputs, during a single
+    import run. Cleared at the start of every run; never relied on to
+    persist anything -- the DB is the source of truth. Temporarily uses
+    real local disk space roughly equal to the total size of everything
+    new being imported in that run, not just symlinks as the name might
+    suggest from its git history."""
     return data_home() / "staging"
 
 

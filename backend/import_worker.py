@@ -288,6 +288,8 @@ class ImportWorker(QThread):
 
             if dest_suffix == ".dng":
                 converter.set_dng_backward_version(dest)
+            elif cand.camera_model_inferred and scanner.is_video(dest):
+                converter.set_camera_model(dest, cand.camera_model)
             dest_bytes = dest.stat().st_size
             now = datetime.now(timezone.utc).isoformat()
             try:

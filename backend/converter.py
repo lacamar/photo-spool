@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 CONVERT_TIMEOUT_S = 60 * 30
 DNG_VERSION_TIMEOUT_S = 30
+MODEL_WRITE_TIMEOUT_S = 30
 DNG_BACKWARD_VERSION = "1.4.0.0"
 _UNSAFE_CHARS_RE = re.compile(r"[^A-Za-z0-9._+-]")
 _CONVERTED_RE = re.compile(r"Status: Converted '([^']+)' =>")
@@ -84,6 +85,20 @@ def set_dng_backward_version(path: Path) -> None:
         )
     except (subprocess.CalledProcessError, OSError, subprocess.TimeoutExpired):
         logger.warning("Could not set DNGBackwardVersion on %s", path, exc_info=True)
+
+
+def set_camera_model(path: Path, model: str) -> None:
+    """Writes a Model tag into a placed video that didn't have one of its
+    own -- only called when scanner._fill_missing_camera_models had to
+    borrow the model from a sibling file in the same scan. Non-fatal on
+    failure, same as set_dng_backward_version above."""
+    try:
+        subprocess.run(
+            ["exiftool", f"-Model={model}", "-overwrite_original", "-P", str(path)],
+            capture_output=True, text=True, timeout=MODEL_WRITE_TIMEOUT_S, check=True,
+        )
+    except (subprocess.CalledProcessError, OSError, subprocess.TimeoutExpired):
+        logger.warning("Could not set Model on %s", path, exc_info=True)
 
 
 def library_dest_path(library_root: Path, candidate: "scanner.Candidate", suffix: str) -> Path:

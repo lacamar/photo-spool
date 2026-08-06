@@ -61,6 +61,10 @@ class Candidate:
     size_bytes: int
     camera_model: str
     captured_at: str | None  # ISO 8601 local wall-clock time, as recorded by the camera
+    # True when camera_model didn't come from this file's own metadata --
+    # see _fill_missing_camera_models. Tells the import pipeline to write
+    # the borrowed value back into the placed file (video only).
+    camera_model_inferred: bool = False
 
 
 def is_dng(path: Path) -> bool:
@@ -131,7 +135,32 @@ def read_metadata(files: list[Path]) -> dict[Path, Candidate]:
             camera_model=str(rec.get("Model") or "").strip(),
             captured_at=_parse_exif_datetime(rec.get("DateTimeOriginal")) or _parse_exif_datetime(rec.get("CreateDate")),
         )
+    _fill_missing_camera_models(out)
     return out
+
+
+def _fill_missing_camera_models(candidates: dict[Path, Candidate]) -> None:
+    """Some cameras don't embed a Model tag in their video files the way
+    they do in stills (confirmed against this machine's own library:
+    videos like "2022.06.03__221935228.mp4" already show the resulting
+    empty-model gap in their filename), which breaks both the library
+    filename (the YYYY.MM.DD_Model_NNNNN convention loses its model
+    segment) and dedup's (camera_model, filename, size) quick-match. If
+    every OTHER file with a known model in this same scan agrees on
+    exactly one, that's a safe stand-in -- a source root is one card/
+    folder in practice (this also covers Sony's video/stills living in
+    separate directory trees on the same card, since this runs over the
+    whole scan, not per-directory). Deliberately doesn't touch anything
+    else (date/time, lens) -- those genuinely vary per file and can't be
+    inferred this way."""
+    models = {c.camera_model for c in candidates.values() if c.camera_model}
+    if len(models) != 1:
+        return  # no siblings with a known model, or a mixed-camera batch -- don't guess
+    (fallback_model,) = models
+    for cand in candidates.values():
+        if not cand.camera_model:
+            cand.camera_model = fallback_model
+            cand.camera_model_inferred = True
 
 
 _EXIF_DT_RE = re.compile(r"^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})")

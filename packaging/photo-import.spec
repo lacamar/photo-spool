@@ -1,5 +1,5 @@
 Name:           photo-import
-Version:        0.2.14
+Version:        0.2.15
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -97,6 +97,19 @@ for path in sys.argv[1:]:
 %{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
 
 %changelog
+* Thu Aug 06 2026 Photo Import <noreply@example.com> - 0.2.15-1
+- Fixed missing camera-model metadata on imported videos: some cameras
+  don't embed a Model tag in video the way they do in stills (confirmed
+  against this machine's own library -- pre-existing videos like
+  "2022.06.03__221935228.mp4" already show the resulting empty-model gap
+  in their filename). If every other file with a known model in the same
+  scan agrees on exactly one (covers Sony's photos/video living in
+  separate directory trees on one card), that model is now borrowed for
+  the video's filename/dedup key and written into the placed video file
+  itself via exiftool. Never infers per-file variable fields (date/time,
+  lens) this way, and backs off entirely on an ambiguous/mixed-camera
+  batch rather than guessing wrong. Verified against real library files.
+
 * Thu Aug 06 2026 Photo Import <noreply@example.com> - 0.2.14-1
 - "Mark as already imported" is now quiet: it no longer creates a
   history card, an in-app notification, or a native desktop notification

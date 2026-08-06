@@ -1,5 +1,5 @@
 Name:           photo-import
-Version:        0.2.15
+Version:        0.2.16
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -13,6 +13,7 @@ BuildArch:      noarch
 BuildRequires:  desktop-file-utils
 BuildRequires:  librsvg2-tools
 BuildRequires:  python3
+BuildRequires:  systemd-rpm-macros
 
 Requires:       python3
 Requires:       python3-pyside6
@@ -80,6 +81,12 @@ for size in 16 32 48 64 128 256 512; do
         "%{buildroot}%{_datadir}/icons/hicolor/${size}x${size}/apps/%{name}.png"
 done
 
+# A *user* unit (needs the Wayland session/D-Bus user bus), not a system
+# one -- installed but left disabled by default (no preset ships), so
+# `systemctl --user enable --now photo-import.service` is an opt-in step,
+# not a surprise background app after a routine package upgrade.
+install -Dm644 packaging/%{name}.service %{buildroot}%{_userunitdir}/%{name}.service
+
 %check
 desktop-file-validate %{buildroot}%{_datadir}/applications/%{name}.desktop
 find %{buildroot}%{_datadir}/%{name} -name '*.py' -print0 | xargs -0 python3 -c '
@@ -89,14 +96,34 @@ for path in sys.argv[1:]:
         ast.parse(fh.read(), path)
 '
 
+%post
+%systemd_user_post %{name}.service
+
+%preun
+%systemd_user_preun %{name}.service
+
+%postun
+%systemd_user_postun_with_restart %{name}.service
+
 %files
 %{_bindir}/%{name}
 %{_datadir}/%{name}/
 %{_datadir}/applications/%{name}.desktop
 %{_datadir}/icons/hicolor/*/apps/%{name}.png
 %{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
+%{_userunitdir}/%{name}.service
 
 %changelog
+* Thu Aug 06 2026 Photo Import <noreply@example.com> - 0.2.16-1
+- Added a systemd *user* service (packaging/photo-import.service):
+  starts the app in the background and restarts it (Restart=on-failure,
+  capped at 5 restarts/60s) if it crashes. Tied to graphical-session.target
+  since it needs the Wayland/D-Bus user session, same as niri itself.
+  Installed but not enabled by default (no preset ships, and %post/%preun/
+  %postun use the standard %systemd_user_* RPM macros) -- a routine
+  package upgrade should never silently start a new background app, so
+  run `systemctl --user enable --now photo-import.service` to opt in.
+
 * Thu Aug 06 2026 Photo Import <noreply@example.com> - 0.2.15-1
 - Fixed missing camera-model metadata on imported videos: some cameras
   don't embed a Model tag in video the way they do in stills (confirmed

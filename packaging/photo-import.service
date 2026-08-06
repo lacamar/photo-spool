@@ -1,0 +1,15 @@
+[Unit]
+Description=Photo Import (background import service)
+PartOf=graphical-session.target
+After=graphical-session.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/photo-import
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

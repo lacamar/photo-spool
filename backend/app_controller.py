@@ -19,6 +19,11 @@ from .preview_worker import PreviewWorker
 from .stats_worker import SourceStatsWorker
 from .theme_portal import PREFER_DARK, ThemePortal
 
+try:
+    import dbus
+except ImportError:  # pragma: no cover - dbus-python always present via dnf dep
+    dbus = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -242,13 +247,37 @@ class AppController(QObject):
         ]
 
     @Slot(str)
-    def openInFileBrowser(self, dest_path: str) -> None:
-        """Opens the folder containing an imported file in the desktop's
-        default file browser (not the file itself, which xdg-open would
-        hand off to whatever's associated with .dng -- usually an image
-        viewer, not a file manager)."""
+    def openFile(self, dest_path: str) -> None:
+        """Opens an imported file itself in the desktop's default handler
+        (an image viewer for a .dng, in the normal case)."""
         if not dest_path:
             return
+        try:
+            subprocess.Popen(["xdg-open", dest_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except OSError:
+            self.toast.emit("Could not open the file.")
+
+    @Slot(str)
+    def revealInFileBrowser(self, dest_path: str) -> None:
+        """Opens the file's containing folder in the desktop's file
+        manager with the file itself selected, via the freedesktop
+        org.freedesktop.FileManager1 ShowItems method -- the standard
+        cross-file-manager way to do this (supported by Nautilus, Nemo,
+        Dolphin, ...). xdg-open has no equivalent: it can only open a
+        folder, never select an item inside it. Falls back to just
+        opening the parent folder if no file manager on the session bus
+        implements that interface."""
+        if not dest_path:
+            return
+        if dbus is not None:
+            try:
+                bus = dbus.SessionBus()
+                proxy = bus.get_object("org.freedesktop.FileManager1", "/org/freedesktop/FileManager1")
+                iface = dbus.Interface(proxy, "org.freedesktop.FileManager1")
+                iface.ShowItems([QUrl.fromLocalFile(dest_path).toString()], "")
+                return
+            except dbus.exceptions.DBusException:
+                pass
         folder = str(Path(dest_path).parent)
         try:
             subprocess.Popen(["xdg-open", folder], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -269,6 +298,28 @@ class AppController(QObject):
             self.sessionModel.mark_ejected(session_id)
         else:
             self.toast.emit("Could not eject -- it may still be in use.")
+
+    @Slot(int)
+    def clearSession(self, session_id: int) -> None:
+        """Removes one entry from the import history. This only forgets
+        the app's record of the session (and its per-file rows, via
+        ON DELETE CASCADE) -- it never touches the imported photos
+        themselves on disk."""
+        if session_id == self._active_session_id:
+            return  # never clear a session that's still running
+        with self._conn:
+            self._conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+        self.sessionModel.remove(session_id)
+
+    @Slot()
+    def clearHistory(self) -> None:
+        """Clears every finished session from the history list, leaving
+        a currently-running one (if any) in place."""
+        with self._conn:
+            self._conn.execute(
+                "DELETE FROM sessions WHERE id != ?", (self._active_session_id,)
+            )
+        self.sessionModel.remove_all_except(self._active_session_id)
 
     # --- source strip: live devices + saved folders ---------------------------------
 

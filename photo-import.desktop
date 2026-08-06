@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=Photo Import
-Comment=Automatically import and convert ARW photos to lossless DNG
+Comment=Automatically import and convert raw photos to lossless DNG
 Exec=/home/lm/.local/src/claude/photo-import/run.sh
 Icon=/home/lm/.local/src/claude/photo-import/icons/photo-import.svg
 Terminal=false

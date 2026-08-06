@@ -93,6 +93,12 @@ Item {
                         icon: "⟳"
                         onClicked: appController.refreshDevices()
                     }
+
+                    HeaderIconButton {
+                        icon: "🗑"
+                        visible: list.count > 0
+                        onClicked: appController.clearHistory()
+                    }
                 }
 
                 Rectangle {
@@ -183,6 +189,7 @@ Item {
                 progressFile: model.progressFile
                 onOpened: root.sessionOpened(model.sessionId, model.deviceLabel)
                 onEjectRequested: appController.ejectSession(model.sessionId)
+                onClearRequested: appController.clearSession(model.sessionId)
             }
         }
 
@@ -200,7 +207,7 @@ Item {
                 Layout.alignment: Qt.AlignHCenter
             }
             Text {
-                text: "New ARW files are converted to lossless DNG and filed into your library automatically."
+                text: "New raw files are converted to lossless DNG and filed into your library automatically."
                 color: Theme.textSecondary
                 font.pixelSize: 11
                 Layout.alignment: Qt.AlignHCenter

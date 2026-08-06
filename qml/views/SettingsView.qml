@@ -178,7 +178,7 @@ Item {
                     Switch { id: embedRawToggle; onToggled: appController.setSetting("embed_raw_in_dng", checked) }
                 }
                 Text {
-                    text: "Off keeps DNGs roughly half the size of the original ARW (matches Lightroom's default). On preserves the exact original raw bytes inside the DNG, at close to full size."
+                    text: "Off keeps DNGs roughly half the size of the original raw file (matches Lightroom's default). On preserves the exact original raw bytes inside the DNG, at close to full size."
                     color: Theme.textSecondary
                     font.pixelSize: 11
                     wrapMode: Text.WordWrap

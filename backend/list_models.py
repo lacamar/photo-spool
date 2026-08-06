@@ -106,6 +106,23 @@ class SessionListModel(QAbstractListModel):
         idx = self.index(i, 0)
         self.dataChanged.emit(idx, idx)
 
+    def remove(self, session_id: int) -> None:
+        i = self.index_of(session_id)
+        if i < 0:
+            return
+        self.beginRemoveRows(QModelIndex(), i, i)
+        del self._entries[i]
+        self.endRemoveRows()
+
+    def remove_all_except(self, keep_session_id: int) -> None:
+        """Clears every entry except (optionally) one still-running session."""
+        for i in reversed(range(len(self._entries))):
+            if self._entries[i]["sessionId"] == keep_session_id:
+                continue
+            self.beginRemoveRows(QModelIndex(), i, i)
+            del self._entries[i]
+            self.endRemoveRows()
+
     def rowCount(self, parent=QModelIndex()) -> int:
         return len(self._entries)
 

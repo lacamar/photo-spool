@@ -26,6 +26,7 @@ Rectangle {
 
     signal opened()
     signal ejectRequested()
+    signal clearRequested()
 
     function statusColor() {
         switch (root.status) {
@@ -111,6 +112,31 @@ Rectangle {
                 text: root.statusLabel()
                 bg: Qt.rgba(root.statusColor().r, root.statusColor().g, root.statusColor().b, 0.16)
                 fg: root.statusColor()
+            }
+
+            Rectangle {
+                visible: root.status !== "running"
+                Layout.preferredWidth: 22
+                Layout.preferredHeight: 22
+                Layout.alignment: Qt.AlignVCenter
+                radius: 11
+                color: clearMouse.containsMouse ? Theme.accentSoft : "transparent"
+                Behavior on color { ColorAnimation { duration: Theme.animFast } }
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "✕"
+                    font.pixelSize: 10
+                    color: Theme.textSecondary
+                }
+
+                MouseArea {
+                    id: clearMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.clearRequested()
+                }
             }
         }
 

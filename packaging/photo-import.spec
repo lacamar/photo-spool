@@ -1,5 +1,5 @@
 Name:           photo-import
-Version:        0.2.9
+Version:        0.2.10
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -93,6 +93,21 @@ for path in sys.argv[1:]:
 %{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
 
 %changelog
+* Thu Aug 06 2026 Photo Import <noreply@example.com> - 0.2.10-1
+- Session detail rows: default click now opens the file itself in the
+  desktop's default image viewer (xdg-open on the file); a new small
+  folder button at the right end of each row reveals the file selected in
+  the file manager, via the freedesktop org.freedesktop.FileManager1
+  ShowItems D-Bus method -- xdg-open can only ever target a folder, never
+  select an item inside it.
+- Import history: each session card now has a small dismiss control to
+  clear that one entry, plus a header trash-can button to clear all
+  finished sessions at once. Clearing only forgets the app's own history
+  record (DB row, cascades to its per-file rows) -- it never touches the
+  imported photos on disk. A currently-running session can't be cleared.
+- User-facing copy no longer singles out Sony ARW -- "raw files"/"raw
+  photos" throughout, matching the app's actual multi-format support.
+
 * Thu Aug 06 2026 Photo Import <noreply@example.com> - 0.2.9-1
 - Subtle motion polish: popups (settings/notifications/session detail) now
   fade+scale in and out instead of snapping instantly -- QtQuick Controls'

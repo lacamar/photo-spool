@@ -60,7 +60,7 @@ Item {
                     enabled: !!modelData.destPath
                     hoverEnabled: true
                     cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                    onClicked: appController.openInFileBrowser(modelData.destPath)
+                    onClicked: appController.openFile(modelData.destPath)
                 }
 
                 RowLayout {
@@ -106,6 +106,31 @@ Item {
                             font.pixelSize: 10
                             elide: Text.ElideMiddle
                             Layout.fillWidth: true
+                        }
+                    }
+
+                    Rectangle {
+                        id: revealButton
+                        visible: !!modelData.destPath
+                        Layout.preferredWidth: 26
+                        Layout.preferredHeight: 26
+                        Layout.alignment: Qt.AlignVCenter
+                        radius: 13
+                        color: revealMouse.containsMouse ? Theme.accentSoft : "transparent"
+                        Behavior on color { ColorAnimation { duration: Theme.animFast } }
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: "📁"
+                            font.pixelSize: 12
+                        }
+
+                        MouseArea {
+                            id: revealMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: appController.revealInFileBrowser(modelData.destPath)
                         }
                     }
                 }

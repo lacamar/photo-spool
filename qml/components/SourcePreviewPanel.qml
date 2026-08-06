@@ -187,7 +187,7 @@ Rectangle {
 
         Text {
             visible: !root.loading && root.errorText.length === 0 && root.items.length === 0
-            text: "No ARW files found here"
+            text: "No raw files found here"
             color: Theme.textSecondary
             font.pixelSize: 12
             Layout.alignment: Qt.AlignHCenter

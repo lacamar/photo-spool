@@ -427,6 +427,40 @@ class DeviceWatcher(QObject):
             except OSError:
                 pass
 
+        # An iPhone's *main* AFC share (the one with DCIM on it) never
+        # actually appears as a listed, mountable Volume in `gio mount
+        # -li` at all -- confirmed live, both on first connect and again
+        # after a physical unplug/replug: only per-app "Files" document
+        # shares (",port=" dirnames) show up there and auto-mount on
+        # their own. The main share has to be mounted by its well-known
+        # afc://<udid>/ URI directly, which is why _list_unmounted_gvfs_uris
+        # above can never find it. idevice_id (usbmuxd) reports physically
+        # connected UDIDs independent of gvfs's own incomplete volume
+        # enumeration, so use that instead to know what to try mounting.
+        for udid in self._list_connected_iphone_udids():
+            if f"afc:host={udid}" in gvfs_dirs:
+                continue  # main share already mounted
+            attempt_key = f"afc-main:{udid}"
+            last = self._mtp_mount_attempts.get(attempt_key, 0.0)
+            if now - last < MTP_MOUNT_RETRY_S:
+                continue
+            self._mtp_mount_attempts[attempt_key] = now
+            try:
+                subprocess.Popen(
+                    ["gio", "mount", f"afc://{udid}/"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                )
+            except OSError:
+                pass
+
+    def _list_connected_iphone_udids(self) -> set[str]:
+        try:
+            result = subprocess.run(["idevice_id", "-l"], capture_output=True, text=True, timeout=5)
+        except (OSError, subprocess.SubprocessError):
+            return set()
+        if result.returncode != 0:
+            return set()
+        return {line.strip() for line in result.stdout.splitlines() if line.strip()}
+
     def _list_unmounted_gvfs_uris(self) -> set[str]:
         try:
             result = subprocess.run(["gio", "mount", "-li"], capture_output=True, text=True, timeout=5)

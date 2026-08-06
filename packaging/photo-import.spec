@@ -1,5 +1,5 @@
 Name:           photo-import
-Version:        0.2.19
+Version:        0.2.20
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -37,6 +37,13 @@ Requires:       hicolor-icon-theme
 Requires:       gvfs-mtp
 Requires:       gvfs-afc
 Requires:       gvfs-fuse
+# idevice_id -- an iPhone's main AFC share (the one with DCIM) never
+# appears as a listed, mountable Volume in `gio mount -li` at all, so
+# device_watch.py uses this (independent of gvfs's own volume
+# enumeration) to know when to proactively mount it by its well-known
+# afc://<udid>/ URI. Without it, only the per-app document shares
+# auto-mount, and the device looks undetected after every replug.
+Requires:       libimobiledevice-utils
 # Optional: raw-Wayland compositor-blur detection (progressive enhancement,
 # app works fine without it -- see backend/blur.py).
 Recommends:     python3-pywayland
@@ -132,6 +139,18 @@ done
 %{_userunitdir}/%{name}.service
 
 %changelog
+* Thu Aug 06 2026 Photo Import <noreply@example.com> - 0.2.20-1
+- Fixed the iPhone appearing undetected again after a physical unplug/
+  replug: confirmed live that `gio mount -li` never lists the phone's
+  *main* AFC share (the one with DCIM on it) as a discoverable Volume at
+  all -- only per-app "Files" document shares show up there and
+  auto-mount on their own. device_watch.py now uses `idevice_id` (new
+  Requires: libimobiledevice-utils) to detect physically-connected
+  iPhones independent of gvfs's own incomplete volume listing, and
+  proactively mounts the main share by its well-known afc://<udid>/ URI.
+  Verified live: a freshly unmounted device recovers within one ~2s poll
+  cycle, with no manual intervention.
+
 * Thu Aug 06 2026 Photo Import <noreply@example.com> - 0.2.19-1
 - Fixed a real iPhone import attempt mostly failing (679 of 693 files,
   "No such file or directory"): the AFC scan walked the phone's entire

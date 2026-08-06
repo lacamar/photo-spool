@@ -33,6 +33,14 @@ Item {
             spacing: 6
             model: notificationModel
 
+            add: Transition {
+                NumberAnimation { properties: "opacity"; from: 0; to: 1; duration: Theme.animMedium }
+                NumberAnimation { properties: "y"; from: -16; duration: Theme.animMedium; easing.type: Easing.OutCubic }
+            }
+            displaced: Transition {
+                NumberAnimation { properties: "x,y"; duration: Theme.animMedium; easing.type: Easing.OutCubic }
+            }
+
             delegate: Rectangle {
                 width: list.width
                 implicitHeight: content.implicitHeight + 16

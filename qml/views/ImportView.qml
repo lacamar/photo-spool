@@ -154,6 +154,14 @@ Item {
             spacing: 10
             model: sessionModel
 
+            add: Transition {
+                NumberAnimation { properties: "opacity"; from: 0; to: 1; duration: Theme.animMedium }
+                NumberAnimation { properties: "y"; from: -16; duration: Theme.animMedium; easing.type: Easing.OutCubic }
+            }
+            displaced: Transition {
+                NumberAnimation { properties: "x,y"; duration: Theme.animMedium; easing.type: Easing.OutCubic }
+            }
+
             delegate: SessionCard {
                 width: list.width
                 sessionId: model.sessionId

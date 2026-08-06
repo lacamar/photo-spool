@@ -1,5 +1,5 @@
 Name:           photo-import
-Version:        0.2.8
+Version:        0.2.9
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -93,6 +93,21 @@ for path in sys.argv[1:]:
 %{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
 
 %changelog
+* Thu Aug 06 2026 Photo Import <noreply@example.com> - 0.2.9-1
+- Subtle motion polish: popups (settings/notifications/session detail) now
+  fade+scale in and out instead of snapping instantly -- QtQuick Controls'
+  Basic style Popup has no default transition at all. The session and
+  notification lists now animate new items in and reflow existing ones
+  instead of jumping. The header bell badge does a small pop when the
+  unread count changes, and header icon buttons give a subtle press-down
+  scale for tactile feedback.
+- Investigated real Wayland background blur via the ext-background-effect-v1
+  protocol (niri supports it) -- not implemented: requesting a blur region
+  requires the window's raw wl_surface pointer, which PySide6 6.11 doesn't
+  expose to Python (only the display-wide native interface, not per-window).
+  Would need a compiled C extension; not pursued for now. The existing
+  translucent-background fallback is unchanged.
+
 * Thu Aug 06 2026 Photo Import <noreply@example.com> - 0.2.8-1
 - Fixed a duplicate-import bug: since 0.2.4 (run-in-background/tray icon),
   nothing stopped a second launch from starting its own independent

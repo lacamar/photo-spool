@@ -26,7 +26,9 @@ Item {
         radius: Theme.radiusMedium
         color: Theme.isDark ? "#2c2f3a" : "#1c1e24"
         opacity: 0
+        scale: opacity === 0 ? 0.92 : 1
         Behavior on opacity { NumberAnimation { duration: Theme.animMedium } }
+        Behavior on scale { NumberAnimation { duration: Theme.animMedium; easing.type: Easing.OutCubic } }
 
         Text {
             id: label

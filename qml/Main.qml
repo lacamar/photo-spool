@@ -116,6 +116,15 @@ Window {
         padding: 0
         background: Rectangle { color: Theme.surface; radius: Theme.radiusLarge; border.color: Theme.border; border.width: 1 }
 
+        enter: Transition {
+            NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.animMedium; easing.type: Easing.OutCubic }
+            NumberAnimation { property: "scale"; from: 0.96; to: 1; duration: Theme.animMedium; easing.type: Easing.OutCubic }
+        }
+        exit: Transition {
+            NumberAnimation { property: "opacity"; from: 1; to: 0; duration: Theme.animFast; easing.type: Easing.InCubic }
+            NumberAnimation { property: "scale"; from: 1; to: 0.96; duration: Theme.animFast; easing.type: Easing.InCubic }
+        }
+
         SettingsView { anchors.fill: parent }
     }
 
@@ -129,6 +138,15 @@ Window {
         focus: true
         padding: 0
         background: Rectangle { color: Theme.surface; radius: Theme.radiusLarge; border.color: Theme.border; border.width: 1 }
+
+        enter: Transition {
+            NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.animMedium; easing.type: Easing.OutCubic }
+            NumberAnimation { property: "scale"; from: 0.96; to: 1; duration: Theme.animMedium; easing.type: Easing.OutCubic }
+        }
+        exit: Transition {
+            NumberAnimation { property: "opacity"; from: 1; to: 0; duration: Theme.animFast; easing.type: Easing.InCubic }
+            NumberAnimation { property: "scale"; from: 1; to: 0.96; duration: Theme.animFast; easing.type: Easing.InCubic }
+        }
 
         NotificationHistoryView {
             anchors.fill: parent
@@ -145,6 +163,15 @@ Window {
         focus: true
         padding: 0
         background: Rectangle { color: Theme.surface; radius: Theme.radiusLarge; border.color: Theme.border; border.width: 1 }
+
+        enter: Transition {
+            NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.animMedium; easing.type: Easing.OutCubic }
+            NumberAnimation { property: "scale"; from: 0.96; to: 1; duration: Theme.animMedium; easing.type: Easing.OutCubic }
+        }
+        exit: Transition {
+            NumberAnimation { property: "opacity"; from: 1; to: 0; duration: Theme.animFast; easing.type: Easing.InCubic }
+            NumberAnimation { property: "scale"; from: 1; to: 0.96; duration: Theme.animFast; easing.type: Easing.InCubic }
+        }
 
         function openForSession(sessionId, deviceLabel) {
             sessionDetail.openFor(sessionId, deviceLabel || "Session")

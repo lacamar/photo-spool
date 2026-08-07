@@ -1,5 +1,5 @@
 Name:           photo-import
-Version:        0.2.29
+Version:        0.2.30
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -151,6 +151,21 @@ done
 %{_userunitdir}/%{name}.service
 
 %changelog
+* Fri Aug 07 2026 Photo Import <noreply@example.com> - 0.2.30-1
+- Fixed a real bug, confirmed live against the production DB: selecting
+  only a few files to import (via "Import N selected") read their
+  metadata -- and, inside it, inferred any missing camera_model -- over
+  just that narrow selection, instead of the whole card. A video with no
+  embedded Model tag selected without any still alongside it had nothing
+  to borrow a model from, so it got filed with a blank model segment in
+  its filename and a blank camera_model recorded in the ledger. The
+  picker's own preview scan always reads the whole card, so it correctly
+  infers the real model for that same file on every later visit -- which
+  never matched the ledger's blank value, so an already-imported file
+  kept showing up as "new" in the picker indefinitely. Metadata is now
+  always read over the full found file list before any selection
+  narrows it down.
+
 * Fri Aug 07 2026 Photo Import <noreply@example.com> - 0.2.29-1
 - Codebase audit fixes:
   - Fixed a real correctness bug: two source files with byte-identical

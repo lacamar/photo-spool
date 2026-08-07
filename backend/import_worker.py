@@ -142,6 +142,21 @@ class ImportWorker(QThread):
             self._finish_session(conn, session_id, "completed", ejectable_path=request.source_root)
             return
 
+        # Read metadata (and, inside it, infer any missing camera_model --
+        # see scanner._fill_missing_camera_models) over *every* file found
+        # on the card, before narrowing down to a partial selection below.
+        # A real, confirmed-live bug when this ran the other way around:
+        # selecting just a couple of videos with no embedded Model tag (via
+        # "Import N selected") gave inference nothing to borrow a model
+        # from, so they got filed with a blank model segment in their
+        # filename and a blank camera_model recorded in the ledger. The
+        # *picker's* preview scan always reads the whole card, so it
+        # infers the correct model for those same files -- meaning a later
+        # quick_duplicate_match (keyed on camera_model among other things)
+        # never found the mismatched ledger row, and an already-imported
+        # file kept showing up as "new" indefinitely.
+        metadata = scanner.read_metadata(files, conn)
+
         if request.selected_filenames is not None:
             files = [f for f in files if f.name in request.selected_filenames]
             if not files:
@@ -160,7 +175,6 @@ class ImportWorker(QThread):
                 self.dnglabUnavailable.emit(session_id)
                 return
 
-        metadata = scanner.read_metadata(files, conn)
         sort_order = 0
         # (source_hash, candidate, sort_order, staged_path). staged_path is
         # None for mark_only requests (nothing ever reads it again -- see

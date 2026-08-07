@@ -291,3 +291,45 @@ class SelectedFilenamesTests(ImportWorkerTestCase):
         row = self._session(session_id)
         self.assertEqual(row["found_count"], 2)  # both were found by the scan...
         self.assertEqual(row["imported_count"], 1)  # ...but only the selected one was processed
+
+    def test_metadata_read_sees_the_full_card_not_just_the_selection(self):
+        # Real bug, confirmed live against the actual production DB:
+        # camera-model inference (scanner._fill_missing_camera_models) used
+        # to run *after* narrowing `files` down to selected_filenames, so
+        # selecting just a couple of videos with no embedded Model tag (via
+        # "Import N selected") left inference with no known-model sibling
+        # on this card to borrow from -- filed with a blank model segment
+        # in the filename and a blank camera_model in the ledger. The
+        # picker's own preview scan always reads the *whole* card, so it
+        # infers the correct model for those same files on every rescan,
+        # meaning quick_duplicate_match's (camera_model, filename, size)
+        # lookup never matched and an already-imported file kept showing up
+        # as "new" indefinitely.
+        (self.source_root / "DSC00001.ARW").write_bytes(b"a" * 1000)
+        (self.source_root / "clip.mov").write_bytes(b"b" * 1000)
+        seen_files = []
+        real_read_metadata = scanner.read_metadata
+
+        def spy_read_metadata(files, conn=None):
+            seen_files.extend(files)
+            return real_read_metadata(files, conn)
+
+        with mock.patch("backend.import_worker.scanner.read_metadata", side_effect=spy_read_metadata):
+            self._run(selected_filenames=frozenset({"clip.mov"}))
+
+        self.assertEqual({f.name for f in seen_files}, {"DSC00001.ARW", "clip.mov"})
+
+    def test_selecting_a_subset_still_infers_camera_model_from_the_full_card(self):
+        still = self.source_root / "DSC00001.ARW"
+        still.write_bytes(b"a" * 1000)
+        video = self.source_root / "clip.mov"
+        video.write_bytes(b"b" * 1000)
+        still_cand = scanner.Candidate(path=still, size_bytes=1000, camera_model="ILCE-7RM3", captured_at=None)
+        video_cand = scanner.Candidate(path=video, size_bytes=1000, camera_model="", captured_at=None)
+
+        with mock.patch("backend.scanner._read_metadata_uncached",
+                         return_value={still: still_cand, video: video_cand}):
+            self._run(selected_filenames=frozenset({"clip.mov"}))
+
+        row = self.conn.execute("SELECT camera_model FROM imports WHERE source_filename = 'clip.mov'").fetchone()
+        self.assertEqual(row["camera_model"], "ILCE-7RM3")

@@ -1,5 +1,5 @@
 Name:           photo-import
-Version:        0.2.26
+Version:        0.2.27
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -151,6 +151,17 @@ done
 %{_userunitdir}/%{name}.service
 
 %changelog
+* Fri Aug 07 2026 Photo Import <noreply@example.com> - 0.2.27-1
+- Fixed ugly filenames for a real iPhone naming quirk: some assets get a
+  trailing disambiguator letter (e.g. "IMG_7731D.DNG" -- evidence points
+  to Apple's deferred/background photo processing pipeline, confirmed
+  live: a same-capture-second sibling with a very different file size).
+  shot_number()'s trailing-digits regex didn't allow a trailing letter,
+  so a name like that fell all the way back to the *whole* original
+  stem, landing "IMG_" itself in the library filename
+  ("..._IMG_7731D.dng" instead of the intended "..._7731D.dng"). No data
+  was ever lost or overwritten by this -- purely a naming cosmetic issue.
+
 * Fri Aug 07 2026 Photo Import <noreply@example.com> - 0.2.26-1
 - Scanning a large source (an iPhone's ~700-file camera roll) is now
   dramatically faster on repeat scans: confirmed live that the exiftool

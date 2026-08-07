@@ -44,6 +44,21 @@ class ShotNumberTests(IsolatedTestCase):
     def test_no_trailing_digits_falls_back_to_stem(self):
         self.assertEqual(scanner.shot_number("no_numbers_here.arw"), "no_numbers_here")
 
+    def test_trailing_disambiguator_letter(self):
+        # A real iPhone names some assets with a single trailing letter
+        # after the number (evidence points to its deferred/background
+        # photo processing pipeline) -- confirmed live: DCIM/127APPLE had
+        # both IMG_7731.DNG and IMG_7731D.DNG, same capture second, very
+        # different file sizes, clearly two distinct real assets, not a
+        # collision. Before this, "IMG_7731D" didn't end in a bare digit
+        # run, so this fell all the way back to the *whole* stem, landing
+        # "IMG_" itself in the final library filename.
+        self.assertEqual(scanner.shot_number("IMG_7731D.DNG"), "7731D")
+        self.assertEqual(scanner.shot_number("IMG_7731.DNG"), "7731")
+        # A letter-prefixed edit marker ("E" for "edited") still resolves
+        # to the bare trailing digits -- only a *trailing* letter changes.
+        self.assertEqual(scanner.shot_number("IMG_E1234.HEIC"), "1234")
+
 
 class ExifDatetimeParsingTests(IsolatedTestCase):
     def test_valid(self):

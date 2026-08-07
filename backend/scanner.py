@@ -265,10 +265,21 @@ def _parse_exif_datetime(value) -> str | None:
 def shot_number(filename: str) -> str:
     """Trailing digit run of the original filename (e.g. "DSC01075.ARW" ->
     "01075"), matching the numbering already used throughout the existing,
-    Lightroom-imported library. Falls back to the full stem for a camera
-    that names files with no trailing digits."""
+    Lightroom-imported library. Also allows trailing letters after the
+    digits (e.g. "IMG_7731D.DNG" -> "7731D") -- confirmed live against a
+    real iPhone: it names some assets with a single trailing disambiguator
+    letter (evidence points to Apple's deferred/background photo
+    processing pipeline -- a same-second-timestamp sibling with a wildly
+    different file size, and the "D" file itself no longer present on the
+    device shortly after, consistent with a transient intermediate result
+    -- though Apple doesn't document the exact semantics). Without this,
+    a name like "IMG_7731D" doesn't end in a bare digit run at all, so
+    this fell all the way back to the *whole* stem, landing "IMG_" itself
+    in the library filename ("..._IMG_7731D.dng" instead of
+    "..._7731D.dng"). Falls back to the full stem for a camera that names
+    files with no trailing digits at all."""
     stem = Path(filename).stem
-    m = re.search(r"(\d+)$", stem)
+    m = re.search(r"(\d+[A-Za-z]*)$", stem)
     return m.group(1) if m else stem
 
 

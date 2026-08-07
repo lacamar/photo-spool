@@ -1,5 +1,5 @@
 Name:           photo-import
-Version:        0.2.31
+Version:        0.2.32
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -130,8 +130,20 @@ python3 -m unittest discover -s tests -v
 # enabled/running, so installing an update actually takes effect right
 # away instead of waiting for the user to remember to do it by hand.
 # try-restart is a safe no-op for anyone who never enabled it.
+#
+# daemon-reload first, scoped to *this* user's own systemd --user manager
+# instance -- confirmed live: without it, try-restart can still be using
+# that manager's in-memory copy of the *previous* unit file (e.g. the
+# 0.2.31 upgrade that switched Type=simple -> Type=notify), so the
+# restarted process runs the new code correctly but the manager never
+# receives its READY=1 (that unit generation predates NotifyAccess even
+# existing for it) and marks the start "failed (protocol)" -- while the
+# actual process keeps running fine, just orphaned from systemd's
+# tracking, invisible to `systemctl status` and never watchdog-protected.
 loginctl list-users --no-legend 2>/dev/null | while read -r uid user _; do
     [ -S "/run/user/${uid}/bus" ] || continue
+    XDG_RUNTIME_DIR="/run/user/${uid}" runuser -u "$user" -- \
+        systemctl --user daemon-reload >/dev/null 2>&1 || :
     XDG_RUNTIME_DIR="/run/user/${uid}" runuser -u "$user" -- \
         systemctl --user try-restart %{name}.service >/dev/null 2>&1 || :
 done
@@ -151,6 +163,18 @@ done
 %{_userunitdir}/%{name}.service
 
 %changelog
+* Fri Aug 07 2026 Photo Import <noreply@example.com> - 0.2.32-1
+- Fixed a packaging bug in %post's own upgrade-restart, confirmed live
+  during the 0.2.31 rollout: try-restart could still be using the
+  running systemd --user manager's in-memory copy of the *previous*
+  unit file (e.g. the 0.2.31 upgrade that switched Type=simple ->
+  Type=notify), so the freshly restarted process ran the new code
+  correctly but its READY=1 was sent to a manager that wasn't expecting
+  it yet -- marked "failed (protocol)" while the process itself kept
+  running fine, just orphaned from systemd's tracking and un-watchdog-
+  protected. %post now runs `systemctl --user daemon-reload` (scoped to
+  each logged-in user) immediately before try-restart.
+
 * Fri Aug 07 2026 Photo Import <noreply@example.com> - 0.2.31-1
 - Two Wayland-desktop-service polish items, found via a systematic review
   of the app's OS integration (tray, notifications, theme detection,

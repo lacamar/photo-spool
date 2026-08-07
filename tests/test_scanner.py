@@ -54,6 +54,20 @@ class ExifDatetimeParsingTests(IsolatedTestCase):
         self.assertIsNone(scanner._parse_exif_datetime("not a date"))
         self.assertIsNone(scanner._parse_exif_datetime(0))
 
+    def test_rejects_regex_shaped_but_impossible_dates(self):
+        # A real crash, confirmed live against a real iPhone video: some
+        # cameras/video files write an all-zero placeholder timestamp when
+        # they never actually recorded one. The old regex-only check
+        # accepted "0000-00-00T00:00:00" as a valid-*looking* string, which
+        # then crashed three call frames downstream in
+        # converter.library_dest_path (date.fromisoformat: "year must be
+        # in 1..9999, not 0") -- silently killing the whole import
+        # session's worker thread with no error ever surfaced to the user.
+        self.assertIsNone(scanner._parse_exif_datetime("0000:00:00 00:00:00"))
+        self.assertIsNone(scanner._parse_exif_datetime("2026:02:30 10:00:00"))  # Feb 30th doesn't exist
+        self.assertIsNone(scanner._parse_exif_datetime("2026:13:01 10:00:00"))  # month 13
+        self.assertIsNone(scanner._parse_exif_datetime("2026:01:01 25:00:00"))  # hour 25
+
 
 class FillMissingCameraModelsTests(IsolatedTestCase):
     def _candidate(self, name: str, model: str) -> scanner.Candidate:

@@ -1,5 +1,5 @@
 Name:           photo-import
-Version:        0.2.22
+Version:        0.2.23
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -151,6 +151,23 @@ done
 %{_userunitdir}/%{name}.service
 
 %changelog
+* Fri Aug 07 2026 Photo Import <noreply@example.com> - 0.2.23-1
+- Fixed the real cause of imports getting permanently stuck showing
+  "Filing X/Y" forever, root-caused live with py-spy + the journal: a
+  video with an all-zero placeholder timestamp ("0000:00:00 00:00:00" --
+  some cameras/video files write this when they never actually recorded
+  one) crashed the whole import session with an uncaught ValueError
+  three frames downstream in converter.library_dest_path ("year must be
+  in 1..9999, not 0"), silently killing the worker thread with no error
+  ever surfaced anywhere -- the session just sat at its last progress
+  update forever. This was a pre-existing bug, not something introduced
+  by recent changes, and had been crashing repeatedly for a while
+  (visible retroactively in the journal). scanner._parse_exif_datetime
+  now validates the parsed value is an actual calendar date/time, not
+  just digit-shaped, and library_dest_path has its own defensive
+  fallback to the file's mtime for the same case, so one file's bad
+  metadata can never take down an entire import again.
+
 * Thu Aug 06 2026 Photo Import <noreply@example.com> - 0.2.22-1
 - Fixed videos taking dramatically longer to import than photos: every
   file was being fully read twice over the source connection -- once to

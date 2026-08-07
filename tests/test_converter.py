@@ -43,6 +43,20 @@ class LibraryDestPathTests(IsolatedTestCase):
         expected_date = date.fromtimestamp(f.stat().st_mtime)
         self.assertIn(str(expected_date.year), str(dest))
 
+    def test_falls_back_to_mtime_for_an_invalid_captured_at_instead_of_crashing(self):
+        # Belt-and-suspenders for a real crash: scanner._parse_exif_datetime
+        # is supposed to reject this before it ever gets here, but this
+        # exact line (date.fromisoformat on a bogus string) is what
+        # actually crashed the whole import session live, so it must never
+        # be able to happen again even if a Candidate is constructed some
+        # other way with already-bad data.
+        f = self.tmp / "src.mov"
+        f.write_bytes(b"x")
+        cand = self._candidate(f, "0000-00-00T00:00:00")
+        dest = converter.library_dest_path(self.tmp / "lib", cand, ".mov")
+        expected_date = date.fromtimestamp(f.stat().st_mtime)
+        self.assertIn(str(expected_date.year), str(dest))
+
     def test_unsafe_characters_stripped_from_model(self):
         cand = self._candidate(Path("a.arw"), "2026-05-24T10:00:00", model="Weird/Model Name!")
         dest = converter.library_dest_path(self.tmp / "lib", cand, ".dng")

@@ -105,9 +105,19 @@ def library_dest_path(library_root: Path, candidate: "scanner.Candidate", suffix
     """`suffix` is the extension the placed file will actually have --
     always ".dng" for a dnglab conversion, but the original extension for
     anything passed through untouched (DNG passthrough, or a video)."""
-    if candidate.captured_at:
-        d = date.fromisoformat(candidate.captured_at[:10])
-    else:
+    try:
+        d = date.fromisoformat(candidate.captured_at[:10]) if candidate.captured_at else None
+    except ValueError:
+        # Belt-and-suspenders: scanner._parse_exif_datetime already
+        # validates this, but a real invalid-but-regex-shaped timestamp
+        # ("0000:00:00 00:00:00", confirmed on a real video) crashed this
+        # exact line before that validation existed, silently killing the
+        # whole import session with no error surfaced anywhere. Never let
+        # one file's bad metadata do that again -- fall back to mtime
+        # like a missing captured_at already does, same as any other
+        # per-file oddity elsewhere in this pipeline.
+        d = None
+    if d is None:
         d = date.fromtimestamp(candidate.path.stat().st_mtime)
     model = _sanitize(candidate.camera_model)
     seq = scanner.shot_number(candidate.path.name)

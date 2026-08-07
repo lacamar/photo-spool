@@ -11,6 +11,7 @@ import sqlite3
 import subprocess
 import tempfile
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 EXIFTOOL_BATCH_TIMEOUT_S = 180
@@ -172,8 +173,24 @@ def _parse_exif_datetime(value) -> str | None:
     m = _EXIF_DT_RE.match(value)
     if not m:
         return None
-    y, mo, d, h, mi, s = m.groups()
-    return f"{y}-{mo}-{d}T{h}:{mi}:{s}"
+    y, mo, d, h, mi, s = (int(g) for g in m.groups())
+    try:
+        # Some cameras/video files write a placeholder all-zero timestamp
+        # ("0000:00:00 00:00:00") when they never actually recorded one --
+        # confirmed live: this crashed the whole import session with an
+        # uncaught ValueError from date.fromisoformat("0000-...") three
+        # steps downstream in converter.library_dest_path, silently
+        # killing the worker thread and leaving the session stuck showing
+        # "Filing" forever with no error surfaced anywhere. The regex
+        # above only checks the *shape* (6 groups of digits), not that
+        # they form a real calendar date/time -- do that here instead,
+        # and fall back to None (library_dest_path already falls back to
+        # the file's mtime when captured_at is None) rather than ever
+        # handing back a string that merely looks like a valid date.
+        datetime(y, mo, d, h, mi, s)
+    except ValueError:
+        return None
+    return f"{y:04d}-{mo:02d}-{d:02d}T{h:02d}:{mi:02d}:{s:02d}"
 
 
 def shot_number(filename: str) -> str:

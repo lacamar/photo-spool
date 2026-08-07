@@ -71,7 +71,7 @@ class PreviewWorker(QThread):
 
     def _scan(self, conn, root: str) -> list[dict]:
         files = scanner.find_importable_files(Path(root))
-        metadata = scanner.read_metadata(files)
+        metadata = scanner.read_metadata(files, conn)
         items = []
         for f in files:
             cand = metadata.get(f)

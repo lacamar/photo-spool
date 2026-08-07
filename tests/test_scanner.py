@@ -3,8 +3,9 @@ from __future__ import annotations
 import hashlib
 import sqlite3
 from pathlib import Path
+from unittest import mock
 
-from backend import scanner
+from backend import db, scanner
 from tests.testutil import IsolatedTestCase
 
 
@@ -185,3 +186,77 @@ class DedupLookupTests(IsolatedTestCase):
             )
 
         self.assertIsNone(scanner.quick_duplicate_match(self.conn, "ILCE-7RM3", "a.mov", 100))
+
+
+class MetadataCacheTests(IsolatedTestCase):
+    """read_metadata's cache -- confirmed live that it turns a ~21s
+    exiftool read (an iPhone's ~700-file DCIM tree) into an effectively
+    instant one on the second scan of the same, unchanged files."""
+
+    def setUp(self):
+        super().setUp()
+        self.conn = db.connect()
+        self.addCleanup(self.conn.close)
+
+    def test_second_call_skips_exiftool_entirely(self):
+        f = self.tmp / "a.mov"
+        f.write_bytes(b"x" * 100)
+        cand = scanner.Candidate(path=f, size_bytes=100, camera_model="iPhone", captured_at="2026-01-01T00:00:00")
+
+        with mock.patch("backend.scanner._read_metadata_uncached", return_value={f: cand}) as mocked:
+            first = scanner.read_metadata([f], self.conn)
+            mocked.assert_called_once_with([f])
+
+        with mock.patch("backend.scanner._read_metadata_uncached") as mocked_again:
+            second = scanner.read_metadata([f], self.conn)
+            mocked_again.assert_not_called()
+
+        self.assertEqual(first[f].camera_model, "iPhone")
+        self.assertEqual(second[f].camera_model, "iPhone")
+        self.assertEqual(second[f].captured_at, "2026-01-01T00:00:00")
+
+    def test_only_uncached_files_are_fetched(self):
+        f1, f2 = self.tmp / "a.mov", self.tmp / "b.mov"
+        f1.write_bytes(b"a")
+        f2.write_bytes(b"b")
+        cand1 = scanner.Candidate(path=f1, size_bytes=1, camera_model="X", captured_at=None)
+        with mock.patch("backend.scanner._read_metadata_uncached", return_value={f1: cand1}):
+            scanner.read_metadata([f1], self.conn)  # cache f1 only
+
+        cand2 = scanner.Candidate(path=f2, size_bytes=1, camera_model="X", captured_at=None)
+        with mock.patch("backend.scanner._read_metadata_uncached", return_value={f2: cand2}) as mocked:
+            result = scanner.read_metadata([f1, f2], self.conn)
+            mocked.assert_called_once_with([f2])  # f1 skipped, already cached
+
+        self.assertEqual(set(result.keys()), {f1, f2})
+
+    def test_no_conn_never_caches(self):
+        f = self.tmp / "a.mov"
+        f.write_bytes(b"x")
+        cand = scanner.Candidate(path=f, size_bytes=1, camera_model="X", captured_at=None)
+        with mock.patch("backend.scanner._read_metadata_uncached", return_value={f: cand}) as mocked:
+            scanner.read_metadata([f])
+            scanner.read_metadata([f])
+        self.assertEqual(mocked.call_count, 2)
+
+    def test_sibling_model_inference_still_sees_cached_entries(self):
+        # One file's model comes from cache, another two are freshly
+        # read with no model of their own -- inference must still see
+        # the cached sibling to resolve them, not just whatever was
+        # fetched in *this* call.
+        f1, f2, f3 = self.tmp / "a.arw", self.tmp / "b.mov", self.tmp / "c.mov"
+        f1.write_bytes(b"a")
+        f2.write_bytes(b"b")
+        f3.write_bytes(b"c")
+        cand1 = scanner.Candidate(path=f1, size_bytes=1, camera_model="ILCE-7RM3", captured_at=None)
+        with mock.patch("backend.scanner._read_metadata_uncached", return_value={f1: cand1}):
+            scanner.read_metadata([f1], self.conn)
+
+        cand2 = scanner.Candidate(path=f2, size_bytes=1, camera_model="", captured_at=None)
+        cand3 = scanner.Candidate(path=f3, size_bytes=1, camera_model="", captured_at=None)
+        with mock.patch("backend.scanner._read_metadata_uncached", return_value={f2: cand2, f3: cand3}):
+            result = scanner.read_metadata([f1, f2, f3], self.conn)
+
+        self.assertEqual(result[f2].camera_model, "ILCE-7RM3")
+        self.assertTrue(result[f2].camera_model_inferred)
+        self.assertEqual(result[f3].camera_model, "ILCE-7RM3")

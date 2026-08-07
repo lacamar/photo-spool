@@ -8,7 +8,6 @@ Rectangle {
 
     property string sourceKey: ""
     property string label: ""
-    property var items: []
     property var selected: ({})
     property bool loading: false
     property string errorText: ""
@@ -19,6 +18,18 @@ Rectangle {
         var n = 0
         for (var key in selected) if (selected[key]) n++
         return n
+    }
+
+    // A real ListModel instead of a plain `var` array: mark/unmark need
+    // to flip one row's alreadyImported flag without resetting the
+    // other ~700 -- a plain array has no granular change notification,
+    // so any reassignment (even of an otherwise-identical array) is a
+    // full GridView model reset, destroying and recreating every
+    // delegate (Image included). Confirmed live as a visible whole-grid
+    // flash on every mark/unmark click. ListModel.setProperty() updates
+    // just the one row that actually changed.
+    ListModel {
+        id: itemsModel
     }
 
     function openFor(key, sourceLabel) {
@@ -32,7 +43,7 @@ Rectangle {
         // Switching to a genuinely different source has nothing to carry
         // over, so it still clears immediately.
         if (root.sourceKey !== key) {
-            root.items = []
+            itemsModel.clear()
         }
         root.sourceKey = key
         root.label = sourceLabel
@@ -50,84 +61,58 @@ Rectangle {
 
     function setAll(value) {
         var m = {}
-        for (var i = 0; i < root.items.length; i++) {
-            var it = root.items[i]
-            m[it.filename] = value
+        for (var i = 0; i < itemsModel.count; i++) {
+            m[itemsModel.get(i).filename] = value
         }
         root.selected = m
     }
 
-    // Reassigning root.items wholesale (unavoidable -- a plain `var`
-    // array has no granular change notification, so GridView can only
-    // ever see this as "the model changed", not "these few items
-    // changed") resets GridView's scroll position to the top, same as any
-    // other model reset. Save/restore contentY around it so mark/unmark
-    // doesn't visibly yank the view back to the top of a long grid.
-    // Deferred one tick (Qt.callLater) since the reset itself happens
-    // synchronously as part of the assignment above it.
-    function _preserveScroll(fn) {
-        var savedY = grid.contentY
-        fn()
-        Qt.callLater(function() { grid.contentY = savedY })
-    }
-
     // Records these as already-imported (dedup ledger only, nothing
     // copied/converted) and optimistically greys them out locally so the
-    // grid doesn't wait on a re-scan to reflect it.
+    // grid doesn't wait on a re-scan to reflect it. Updates only the
+    // matching rows in place (ListModel.setProperty) instead of
+    // rebuilding the whole model -- confirmed live that reassigning the
+    // old plain-array `items` property (even just to flip one flag)
+    // caused a visible whole-grid flash, destroying and recreating every
+    // delegate (Image included), and reset GridView's scroll position to
+    // the top. A row update touches only that row.
     function markOwned(filenames) {
         if (filenames.length === 0) return
         appController.markAlreadyImported(root.sourceKey, filenames)
-        _preserveScroll(function() {
-            var nameSet = {}
-            for (var i = 0; i < filenames.length; i++) nameSet[filenames[i]] = true
-            var newItems = []
-            for (var j = 0; j < root.items.length; j++) {
-                var it = root.items[j]
-                if (nameSet[it.filename]) {
-                    var copy = Object.assign({}, it)
-                    copy.alreadyImported = true
-                    newItems.push(copy)
-                } else {
-                    newItems.push(it)
-                }
+        var nameSet = {}
+        for (var i = 0; i < filenames.length; i++) nameSet[filenames[i]] = true
+        for (var j = 0; j < itemsModel.count; j++) {
+            if (nameSet[itemsModel.get(j).filename]) {
+                itemsModel.setProperty(j, "alreadyImported", true)
             }
-            root.items = newItems
-            var m = Object.assign({}, root.selected)
-            for (var k = 0; k < filenames.length; k++) delete m[filenames[k]]
-            root.selected = m
-        })
+        }
+        var m = Object.assign({}, root.selected)
+        for (var k = 0; k < filenames.length; k++) delete m[filenames[k]]
+        root.selected = m
     }
 
     // Reverses markOwned -- forgets the dedup-ledger entry so these show
     // as new again on the next scan, and optimistically un-greys them
     // locally (preselected, same as any other new file) rather than
     // waiting on a re-scan to reflect it. Takes paths (matched against
-    // modelData.path), not filenames: appController.unmarkImported reads
+    // model.path), not filenames: appController.unmarkImported reads
     // metadata straight from these exact paths instead of re-scanning the
     // whole source directory to re-derive them, which would (and, before
     // this, did) freeze the UI for however long that scan takes.
     function unmarkOwned(paths) {
         if (paths.length === 0) return
         appController.unmarkImported(root.sourceKey, paths)
-        _preserveScroll(function() {
-            var pathSet = {}
-            for (var i = 0; i < paths.length; i++) pathSet[paths[i]] = true
-            var newItems = []
-            var m = Object.assign({}, root.selected)
-            for (var j = 0; j < root.items.length; j++) {
-                var it = root.items[j]
-                if (pathSet[it.path]) {
-                    var copy = Object.assign({}, it)
-                    copy.alreadyImported = false
-                    newItems.push(copy)
-                    m[it.filename] = true
-                } else {
-                    newItems.push(it)
-                }
+        var pathSet = {}
+        for (var i = 0; i < paths.length; i++) pathSet[paths[i]] = true
+        var m = Object.assign({}, root.selected)
+        for (var j = 0; j < itemsModel.count; j++) {
+            var it = itemsModel.get(j)
+            if (pathSet[it.path]) {
+                itemsModel.setProperty(j, "alreadyImported", false)
+                m[it.filename] = true
             }
-            root.items = newItems
-            root.selected = m
-        })
+        }
+        root.selected = m
     }
 
     Connections {
@@ -135,10 +120,11 @@ Rectangle {
         function onPreviewReady(key, receivedItems) {
             if (key !== root.sourceKey) return
             root.loading = false
-            root.items = receivedItems
+            itemsModel.clear()
             var m = {}
             for (var i = 0; i < receivedItems.length; i++) {
                 var it = receivedItems[i]
+                itemsModel.append(it)
                 m[it.filename] = !it.alreadyImported
             }
             root.selected = m
@@ -173,13 +159,13 @@ Rectangle {
                 elide: Text.ElideRight
             }
             Text {
-                visible: root.errorText.length === 0 && root.items.length > 0
-                text: root.selectedCount + " of " + root.items.length + " selected"
+                visible: root.errorText.length === 0 && itemsModel.count > 0
+                text: root.selectedCount + " of " + itemsModel.count + " selected"
                 color: Theme.textSecondary
                 font.pixelSize: 11
             }
             Text {
-                visible: root.items.length > 0
+                visible: itemsModel.count > 0
                 text: "Select all"
                 color: Theme.accent
                 font.pixelSize: 11
@@ -187,7 +173,7 @@ Rectangle {
                     onClicked: root.setAll(true) }
             }
             Text {
-                visible: root.items.length > 0
+                visible: itemsModel.count > 0
                 text: "Select none"
                 color: Theme.accent
                 font.pixelSize: 11
@@ -199,7 +185,7 @@ Rectangle {
                 // ones you already have, then pick which of the two
                 // actions applies to that selection, instead of the old
                 // inverted "mark whatever's left unchecked" flow.
-                visible: root.items.length > 0
+                visible: itemsModel.count > 0
                 text: "Mark selected as already imported"
                 color: Theme.textSecondary
                 opacity: root.selectedCount > 0 ? 1.0 : 0.5
@@ -233,7 +219,7 @@ Rectangle {
             // blank state; reopening a source that already has items
             // shown gets a much quieter inline hint instead (see below),
             // and the grid stays up throughout.
-            visible: root.loading && root.items.length === 0
+            visible: root.loading && itemsModel.count === 0
             text: "Scanning for photos…"
             color: Theme.textSecondary
             font.pixelSize: 12
@@ -242,7 +228,7 @@ Rectangle {
         }
 
         Text {
-            visible: root.loading && root.items.length > 0
+            visible: root.loading && itemsModel.count > 0
             text: "Refreshing…"
             color: Theme.textSecondary
             font.pixelSize: 10
@@ -259,7 +245,7 @@ Rectangle {
         }
 
         Text {
-            visible: !root.loading && root.errorText.length === 0 && root.items.length === 0
+            visible: !root.loading && root.errorText.length === 0 && itemsModel.count === 0
             text: "No raw files found here"
             color: Theme.textSecondary
             font.pixelSize: 12
@@ -269,13 +255,13 @@ Rectangle {
 
         GridView {
             id: grid
-            visible: root.items.length > 0
+            visible: itemsModel.count > 0
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
             cellWidth: 132
             cellHeight: 132
-            model: root.items
+            model: itemsModel
             ScrollBar.vertical: ThemedScrollBar {}
             // Without these, GridView destroys and recreates every
             // delegate (including its Image, discarding the already-
@@ -296,13 +282,13 @@ Rectangle {
                 Item {
                     anchors.fill: parent
                     anchors.margins: 5
-                    opacity: modelData.alreadyImported ? 0.4 : 1.0
+                    opacity: model.alreadyImported ? 0.4 : 1.0
 
                     SquircleImage {
                         anchors.fill: parent
                         cornerRadius: Theme.radiusMedium
                         placeholderColor: Theme.chipBackground
-                        source: "image://thumb/" + encodeURIComponent(modelData.path)
+                        source: "image://thumb/" + encodeURIComponent(model.path)
                         asynchronous: true
                         fillMode: Image.PreserveAspectCrop
                         sourceSize.width: 200
@@ -314,9 +300,9 @@ Rectangle {
                     // can intercept their own clicks instead of this one.
                     MouseArea {
                         anchors.fill: parent
-                        enabled: !modelData.alreadyImported
+                        enabled: !model.alreadyImported
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: root.toggle(modelData.filename)
+                        onClicked: root.toggle(model.filename)
                     }
 
                     Rectangle {
@@ -331,7 +317,7 @@ Rectangle {
                             id: nameText
                             anchors.centerIn: parent
                             width: parent.width - 8
-                            text: modelData.filename
+                            text: model.filename
                             color: "white"
                             font.pixelSize: 9
                             elide: Text.ElideMiddle
@@ -340,7 +326,7 @@ Rectangle {
                     }
 
                     Rectangle {
-                        visible: modelData.alreadyImported
+                        visible: model.alreadyImported
                         anchors.centerIn: parent
                         implicitWidth: importedLabel.implicitWidth + 12
                         implicitHeight: importedLabel.implicitHeight + 6
@@ -360,22 +346,22 @@ Rectangle {
                             anchors.margins: -3
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: root.unmarkOwned([modelData.path])
+                            onClicked: root.unmarkOwned([model.path])
                         }
                     }
 
                     Rectangle {
-                        visible: !modelData.alreadyImported
+                        visible: !model.alreadyImported
                         width: 20; height: 20; radius: 4
                         anchors.top: parent.top
                         anchors.right: parent.right
                         anchors.margins: 5
-                        color: root.selected[modelData.filename] ? Theme.accent : Qt.rgba(0, 0, 0, 0.5)
+                        color: root.selected[model.filename] ? Theme.accent : Qt.rgba(0, 0, 0, 0.5)
                         border.width: 1
                         border.color: "white"
 
                         Text {
-                            visible: !!root.selected[modelData.filename]
+                            visible: !!root.selected[model.filename]
                             anchors.centerIn: parent
                             text: "✓"
                             color: "white"
@@ -385,7 +371,7 @@ Rectangle {
                     }
 
                     Rectangle {
-                        visible: !modelData.alreadyImported
+                        visible: !model.alreadyImported
                         anchors.top: parent.top
                         anchors.left: parent.left
                         anchors.margins: 5
@@ -408,7 +394,7 @@ Rectangle {
                             anchors.margins: -3
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: root.markOwned([modelData.filename])
+                            onClicked: root.markOwned([model.filename])
                         }
                     }
                 }

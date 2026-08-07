@@ -90,7 +90,73 @@ def find_importable_files(root: Path) -> list[Path]:
     )
 
 
-def read_metadata(files: list[Path]) -> dict[Path, Candidate]:
+def read_metadata(files: list[Path], conn: sqlite3.Connection | None = None) -> dict[Path, Candidate]:
+    """Per-file metadata, exiftool-batch-read for whatever isn't already
+    cached. `conn`, if given, both serves and populates a persistent
+    cache (metadata_cache) keyed by path alone -- confirmed live that the
+    exiftool read for an iPhone's ~700-file DCIM tree took nearly 21
+    seconds, the dominant cost of every single scan (picker open, source-
+    card stats refresh, and an import's checking phase) even though the
+    same few hundred files are unchanged scan to scan. No size/mtime
+    re-check on a cache hit: this app never modifies a source file (see
+    the same invariant relied on throughout import_worker.py/paths.py),
+    so a file at a given path can't have different metadata later.
+    Passing conn=None (e.g. from a context with no DB handle) just always
+    does the full exiftool read, same as before this cache existed."""
+    if not files:
+        return {}
+    cached: dict[Path, Candidate] = {}
+    to_fetch = files
+    if conn is not None:
+        cached = _load_cached_metadata(conn, files)
+        to_fetch = [f for f in files if f not in cached]
+    fresh = _read_metadata_uncached(to_fetch) if to_fetch else {}
+    if conn is not None and fresh:
+        _store_metadata_cache(conn, fresh)
+    combined = {**cached, **fresh}
+    _fill_missing_camera_models(combined)
+    return combined
+
+
+def _load_cached_metadata(conn: sqlite3.Connection, files: list[Path]) -> dict[Path, Candidate]:
+    if not files:
+        return {}
+    placeholders = ",".join("?" * len(files))
+    rows = conn.execute(
+        f"SELECT path, size_bytes, camera_model, captured_at, camera_model_inferred "
+        f"FROM metadata_cache WHERE path IN ({placeholders})",
+        [str(f) for f in files],
+    ).fetchall()
+    by_path = {row["path"]: row for row in rows}
+    out: dict[Path, Candidate] = {}
+    for f in files:
+        row = by_path.get(str(f))
+        if row is None:
+            continue
+        out[f] = Candidate(
+            path=f, size_bytes=row["size_bytes"], camera_model=row["camera_model"],
+            captured_at=row["captured_at"], camera_model_inferred=bool(row["camera_model_inferred"]),
+        )
+    return out
+
+
+def _store_metadata_cache(conn: sqlite3.Connection, candidates: dict[Path, Candidate]) -> None:
+    now = datetime.now().isoformat()
+    with conn:
+        conn.executemany(
+            "INSERT INTO metadata_cache (path, size_bytes, camera_model, captured_at, camera_model_inferred, "
+            "cached_at) VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(path) DO UPDATE SET size_bytes = excluded.size_bytes, "
+            "camera_model = excluded.camera_model, captured_at = excluded.captured_at, "
+            "camera_model_inferred = excluded.camera_model_inferred, cached_at = excluded.cached_at",
+            [
+                (str(f), c.size_bytes, c.camera_model, c.captured_at, int(c.camera_model_inferred), now)
+                for f, c in candidates.items()
+            ],
+        )
+
+
+def _read_metadata_uncached(files: list[Path]) -> dict[Path, Candidate]:
     """One exiftool invocation for the whole batch, via an argfile so a
     full card of a few hundred files stays well under ARG_MAX."""
     if not files:
@@ -136,7 +202,10 @@ def read_metadata(files: list[Path]) -> dict[Path, Candidate]:
             camera_model=str(rec.get("Model") or "").strip(),
             captured_at=_parse_exif_datetime(rec.get("DateTimeOriginal")) or _parse_exif_datetime(rec.get("CreateDate")),
         )
-    _fill_missing_camera_models(out)
+    # _fill_missing_camera_models runs in the public read_metadata()
+    # wrapper instead, over the *combined* cached+fresh set -- doing it
+    # here too would mean inference only ever sees whichever subset of
+    # files actually needed a fresh exiftool read, not the full picture.
     return out
 
 

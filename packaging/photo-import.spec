@@ -1,5 +1,5 @@
 Name:           photo-import
-Version:        0.2.25
+Version:        0.2.26
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -151,6 +151,25 @@ done
 %{_userunitdir}/%{name}.service
 
 %changelog
+* Fri Aug 07 2026 Photo Import <noreply@example.com> - 0.2.26-1
+- Scanning a large source (an iPhone's ~700-file camera roll) is now
+  dramatically faster on repeat scans: confirmed live that the exiftool
+  metadata read alone took nearly 21 seconds every single time (picker
+  open, source-card stats refresh, or an import's checking phase), even
+  though the same few hundred files are unchanged scan to scan. Added a
+  persistent per-file metadata cache (new metadata_cache table, keyed by
+  path alone -- this app never modifies a source file once discovered,
+  so its metadata can't actually change later); a warm second scan of
+  the same files confirmed dropping from 20.7s to effectively instant.
+- Fixed marking/unmarking a file causing the whole thumbnail grid to
+  visibly flash: reassigning the picker's items array to update one
+  file's flag (unavoidable for a plain array, which has no granular
+  change notification) was a full GridView model reset every time --
+  destroying and recreating every delegate, including every already-
+  decoded thumbnail Image. The picker's item list is now a real
+  ListModel, so mark/unmark update just the one row that changed via
+  setProperty() instead of resetting the whole grid.
+
 * Fri Aug 07 2026 Photo Import <noreply@example.com> - 0.2.25-1
 - Fixed unmarking a file freezing the UI for several seconds: it was
   re-deriving the file's metadata via a full recursive scan of the whole

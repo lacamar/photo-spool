@@ -160,7 +160,7 @@ class ImportWorker(QThread):
                 self.dnglabUnavailable.emit(session_id)
                 return
 
-        metadata = scanner.read_metadata(files)
+        metadata = scanner.read_metadata(files, conn)
         sort_order = 0
         # (source_hash, candidate, sort_order, staged_path). staged_path is
         # None for mark_only requests (nothing ever reads it again -- see

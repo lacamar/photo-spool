@@ -120,6 +120,28 @@ MIGRATIONS: Sequence[Sequence[str]] = (
         "CREATE INDEX idx_imports_quickmatch ON imports(camera_model, source_filename, source_bytes)",
         "CREATE INDEX idx_imports_session ON imports(session_id)",
     ),
+    # --- v3 -> v4: per-file exiftool metadata cache, keyed by path alone
+    # (no size/mtime re-check) -- confirmed live that reading metadata for
+    # an iPhone's ~700-file DCIM tree via exiftool took nearly 21 seconds,
+    # on every single scan (picker open, source-card stats refresh, and
+    # an actual import's checking phase), even though the same few
+    # hundred files are unchanged scan to scan. Relies on the same
+    # never-modify-the-source invariant this app already depends on
+    # elsewhere (see import_worker.py/paths.py) -- once a file exists on
+    # a card/phone's camera roll, this app never touches it, so its
+    # metadata can never actually change out from under a cached entry.
+    (
+        """
+        CREATE TABLE metadata_cache (
+            path TEXT PRIMARY KEY,
+            size_bytes INTEGER NOT NULL,
+            camera_model TEXT NOT NULL DEFAULT '',
+            captured_at TEXT,
+            camera_model_inferred INTEGER NOT NULL DEFAULT 0,
+            cached_at TEXT NOT NULL
+        )
+        """,
+    ),
 )
 
 

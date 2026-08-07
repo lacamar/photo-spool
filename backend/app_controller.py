@@ -521,7 +521,7 @@ class AppController(QObject):
         files = [Path(str(p)) for p in file_paths if p]
         if not files:
             return
-        metadata = scanner.read_metadata(files)
+        metadata = scanner.read_metadata(files, self._conn)
         removed = 0
         with self._conn:
             for f in files:

@@ -77,7 +77,7 @@ class SourceStatsWorker(QThread):
         root = Path(root_str)
         if root.is_dir():
             files = scanner.find_importable_files(root)
-            metadata = scanner.read_metadata(files)
+            metadata = scanner.read_metadata(files, conn)
             file_count = len(files)
             for f in files:
                 cand = metadata.get(f)

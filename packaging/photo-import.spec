@@ -1,5 +1,5 @@
 Name:           photo-import
-Version:        0.2.30
+Version:        0.2.31
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -151,6 +151,22 @@ done
 %{_userunitdir}/%{name}.service
 
 %changelog
+* Fri Aug 07 2026 Photo Import <noreply@example.com> - 0.2.31-1
+- Two Wayland-desktop-service polish items, found via a systematic review
+  of the app's OS integration (tray, notifications, theme detection,
+  file-manager reveal, and autostart were all already correct):
+  - The systemd user service is now Type=notify with a 60s watchdog
+    instead of plain Type=simple. The app sends READY=1 once QML startup
+    finishes and pings WATCHDOG=1 on a timer for as long as it runs, so
+    systemd can tell a genuinely wedged GUI thread apart from a normally
+    running one and restart it, instead of a hang sitting there forever
+    as a false "active (running)".
+  - A large card's import (confirmed elsewhere in this codebase as a
+    genuinely multi-minute operation) now holds an idle/suspend
+    inhibitor (org.freedesktop.portal.Inhibit) for its duration, so a
+    laptop suspending mid-transfer can no longer cut an import off
+    partway through.
+
 * Fri Aug 07 2026 Photo Import <noreply@example.com> - 0.2.30-1
 - Fixed a real bug, confirmed live against the production DB: selecting
   only a few files to import (via "Import N selected") read their

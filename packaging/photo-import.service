@@ -6,7 +6,9 @@ StartLimitIntervalSec=60
 StartLimitBurst=5
 
 [Service]
-Type=simple
+Type=notify
+NotifyAccess=main
+WatchdogSec=60
 ExecStart=/usr/bin/photo-import --start-hidden
 Restart=on-failure
 RestartSec=5

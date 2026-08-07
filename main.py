@@ -28,6 +28,7 @@ from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtQml import QQmlApplicationEngine, qmlRegisterSingletonType
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
+from backend import sd_notify
 from backend.app_controller import AppController
 from backend.thumbnail_provider import ThumbnailImageProvider
 
@@ -128,6 +129,26 @@ def main() -> int:
         return -1
 
     window = engine.rootObjects()[0]
+
+    # Tells systemd (running this as a Type=notify service) that startup
+    # finished and the GUI thread is genuinely alive -- a no-op outside
+    # systemd (see sd_notify.py). The watchdog ping keeps confirming that
+    # same liveness signal for as long as the process runs: if the GUI
+    # thread ever wedges (a blocking call that should be on a worker
+    # thread instead), this timer stops firing and systemd's watchdog
+    # restarts the service instead of it sitting there as a silently-hung
+    # "active (running)" forever. Only armed if the unit actually sets
+    # WatchdogSec= (systemd exports WATCHDOG_USEC in that case) -- pinging
+    # with no watchdog configured would be harmless but pointless.
+    sd_notify.notify("READY=1")
+    watchdog_usec = os.environ.get("WATCHDOG_USEC")
+    if watchdog_usec and watchdog_usec.isdigit():
+        # Ping at half the configured interval, per sd_notify(3)'s own
+        # recommendation, so a single slow tick never falsely trips it.
+        watchdog_interval_ms = max(int(watchdog_usec) // 1000 // 2, 1000)
+        watchdog_timer = QTimer(app)
+        watchdog_timer.timeout.connect(lambda: sd_notify.notify("WATCHDOG=1"))
+        watchdog_timer.start(watchdog_interval_ms)
 
     def show_window():
         window.show()

@@ -10,7 +10,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Property, QObject, QUrl, Signal, Slot
 
-from . import __version__, db, device_watch, dnglab_setup, notifications, paths, scanner, settings_store
+from . import __version__, db, device_watch, dnglab_setup, inhibit, notifications, paths, scanner, settings_store
 from .blur import compositor_supports_blur
 from .import_worker import ImportRequest, ImportWorker
 from .list_models import NotificationListModel, SessionListModel, SourceListModel
@@ -85,6 +85,11 @@ class AppController(QObject):
         # re-hashes the same files back to back. Guarded at submission
         # time instead.
         self._in_flight_roots: set[str] = set()
+        # Held for the duration of any in-flight import (real or mark_only)
+        # so a large card's multi-minute checking/converting/placing run
+        # can't get cut off by the system suspending mid-transfer -- see
+        # inhibit.py.
+        self._inhibitor = inhibit.ImportInhibitor()
 
         self._dnglab_ready = dnglab_setup.find_existing() is not None
         self._dnglab_worker: dnglab_setup.EnsureWorker | None = None
@@ -194,6 +199,7 @@ class AppController(QObject):
             self.toast.emit(f"{request.device_label} is already importing.")
             return False
         self._in_flight_roots.add(request.source_root)
+        self._inhibitor.begin()
         self._queued_count += 1
         self._import_worker.submit(request)
         self.activeSessionChanged.emit()
@@ -209,6 +215,7 @@ class AppController(QObject):
             self.toast.emit(f"{request.device_label} is already busy.")
             return False
         self._in_flight_roots.add(request.source_root)
+        self._inhibitor.begin()
         self._import_worker.submit(request)
         return True
 
@@ -242,6 +249,7 @@ class AppController(QObject):
         if row is None:
             return
         self._in_flight_roots.discard(row["source_root"])
+        self._inhibitor.end()
         # Re-scan the source's card so its "N new" count reflects what
         # just happened, without waiting for the user to hit refresh --
         # for both real imports and quiet mark-as-owned sessions.

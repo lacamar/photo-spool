@@ -82,12 +82,38 @@ def is_video(path: Path) -> bool:
     return path.suffix.lower() in VIDEO_EXTENSIONS
 
 
+def _drop_deferred_duplicates(files: list[Path]) -> list[Path]:
+    """When both a plain-numbered file and its trailing-letter "deferred
+    processing" sibling exist (e.g. IMG_7731.DNG alongside IMG_7731D.DNG --
+    confirmed live against a real iPhone, same capture second, very
+    different file sizes, consistent with Apple's deferred/background photo
+    processing pipeline), only the plain one should ever be imported/shown.
+    A lettered file with no plain sibling present is kept as-is -- there's
+    nothing to prefer it over. Siblings must share both the same parent
+    directory and the same extension; same digits elsewhere don't count."""
+    stems_by_dir_ext: dict[tuple[Path, str], set[str]] = {}
+    for f in files:
+        key = (f.parent, f.suffix.lower())
+        stems_by_dir_ext.setdefault(key, set()).add(f.stem)
+
+    kept = []
+    for f in files:
+        m = re.match(r"^(.*\d)[A-Za-z]+$", f.stem)
+        if m:
+            plain_stem = m.group(1)
+            if plain_stem in stems_by_dir_ext[(f.parent, f.suffix.lower())]:
+                continue  # plain sibling also present -- skip this deferred variant
+        kept.append(f)
+    return kept
+
+
 def find_importable_files(root: Path) -> list[Path]:
     extensions = RAW_EXTENSIONS | VIDEO_EXTENSIONS
-    return sorted(
+    found = sorted(
         p for p in root.rglob("*")
         if p.is_file() and p.suffix.lower() in extensions and not p.name.startswith(".")
     )
+    return _drop_deferred_duplicates(found)
 
 
 def read_metadata(files: list[Path], conn: sqlite3.Connection | None = None) -> dict[Path, Candidate]:

@@ -1,5 +1,5 @@
 Name:           photo-import
-Version:        0.2.27
+Version:        0.2.28
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -151,6 +151,15 @@ done
 %{_userunitdir}/%{name}.service
 
 %changelog
+* Fri Aug 07 2026 Photo Import <noreply@example.com> - 0.2.28-1
+- When a plain-numbered file and its trailing-letter "deferred processing"
+  sibling both exist (e.g. IMG_7731.DNG alongside IMG_7731D.DNG), only the
+  plain one is now imported/shown at all -- the lettered variant is
+  filtered out at the source in scanner.find_importable_files, so this
+  applies transparently to import, the picker, and stats counting alike.
+  A lettered file with no plain sibling present is still kept, since
+  there's nothing to prefer it over.
+
 * Fri Aug 07 2026 Photo Import <noreply@example.com> - 0.2.27-1
 - Fixed ugly filenames for a real iPhone naming quirk: some assets get a
   trailing disambiguator letter (e.g. "IMG_7731D.DNG" -- evidence points

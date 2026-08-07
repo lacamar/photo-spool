@@ -36,6 +36,52 @@ class ExtensionDetectionTests(IsolatedTestCase):
         self.assertEqual(found, {"DSC00001.ARW", "clip.mp4", "nested.dng"})
 
 
+class DropDeferredDuplicatesTests(IsolatedTestCase):
+    def test_lettered_sibling_dropped_when_plain_exists(self):
+        root = self.tmp / "card"
+        root.mkdir()
+        (root / "IMG_7731.DNG").write_bytes(b"plain")
+        (root / "IMG_7731D.DNG").write_bytes(b"deferred")
+
+        found = {p.name for p in scanner.find_importable_files(root)}
+        self.assertEqual(found, {"IMG_7731.DNG"})
+
+    def test_lettered_file_kept_when_no_plain_sibling(self):
+        root = self.tmp / "card"
+        root.mkdir()
+        (root / "IMG_7731D.DNG").write_bytes(b"deferred")
+
+        found = {p.name for p in scanner.find_importable_files(root)}
+        self.assertEqual(found, {"IMG_7731D.DNG"})
+
+    def test_plain_file_kept_when_no_lettered_sibling(self):
+        root = self.tmp / "card"
+        root.mkdir()
+        (root / "IMG_7731.DNG").write_bytes(b"plain")
+
+        found = {p.name for p in scanner.find_importable_files(root)}
+        self.assertEqual(found, {"IMG_7731.DNG"})
+
+    def test_same_digits_in_different_directory_not_treated_as_siblings(self):
+        root = self.tmp / "card"
+        (root / "a").mkdir(parents=True)
+        (root / "b").mkdir(parents=True)
+        (root / "a" / "IMG_7731D.DNG").write_bytes(b"deferred")
+        (root / "b" / "IMG_7731.DNG").write_bytes(b"plain")
+
+        found = {p.name for p in scanner.find_importable_files(root)}
+        self.assertEqual(found, {"IMG_7731D.DNG", "IMG_7731.DNG"})
+
+    def test_same_digits_different_extension_not_treated_as_siblings(self):
+        root = self.tmp / "card"
+        root.mkdir()
+        (root / "IMG_7731D.DNG").write_bytes(b"deferred")
+        (root / "IMG_7731.MOV").write_bytes(b"video")
+
+        found = {p.name for p in scanner.find_importable_files(root)}
+        self.assertEqual(found, {"IMG_7731D.DNG", "IMG_7731.MOV"})
+
+
 class ShotNumberTests(IsolatedTestCase):
     def test_trailing_digits(self):
         self.assertEqual(scanner.shot_number("DSC01075.ARW"), "01075")

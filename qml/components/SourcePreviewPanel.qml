@@ -71,6 +71,32 @@ Rectangle {
         root.selected = m
     }
 
+    // Reverses markOwned -- forgets the dedup-ledger entry so these show
+    // as new again on the next scan, and optimistically un-greys them
+    // locally (preselected, same as any other new file) rather than
+    // waiting on a re-scan to reflect it.
+    function unmarkOwned(filenames) {
+        if (filenames.length === 0) return
+        appController.unmarkImported(root.sourceKey, filenames)
+        var nameSet = {}
+        for (var i = 0; i < filenames.length; i++) nameSet[filenames[i]] = true
+        var newItems = []
+        for (var j = 0; j < root.items.length; j++) {
+            var it = root.items[j]
+            if (nameSet[it.filename]) {
+                var copy = Object.assign({}, it)
+                copy.alreadyImported = false
+                newItems.push(copy)
+            } else {
+                newItems.push(it)
+            }
+        }
+        root.items = newItems
+        var m = Object.assign({}, root.selected)
+        for (var k = 0; k < filenames.length; k++) m[filenames[k]] = true
+        root.selected = m
+    }
+
     Connections {
         target: appController
         function onPreviewReady(key, receivedItems) {
@@ -205,6 +231,7 @@ Rectangle {
             cellWidth: 132
             cellHeight: 132
             model: root.items
+            ScrollBar.vertical: ThemedScrollBar {}
             // Without these, GridView destroys and recreates every
             // delegate (including its Image, discarding the already-
             // decoded pixmap) the instant it scrolls out of view, then
@@ -273,13 +300,22 @@ Rectangle {
                         implicitWidth: importedLabel.implicitWidth + 12
                         implicitHeight: importedLabel.implicitHeight + 6
                         radius: Theme.radiusSmall
-                        color: Qt.rgba(0, 0, 0, 0.6)
+                        color: importedMouse.containsMouse ? Theme.accent : Qt.rgba(0, 0, 0, 0.6)
+                        Behavior on color { ColorAnimation { duration: Theme.animFast } }
                         Text {
                             id: importedLabel
                             anchors.centerIn: parent
-                            text: "Imported"
+                            text: importedMouse.containsMouse ? "Unmark" : "Imported"
                             color: "white"
                             font.pixelSize: 10
+                        }
+                        MouseArea {
+                            id: importedMouse
+                            anchors.fill: parent
+                            anchors.margins: -3
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.unmarkOwned([modelData.filename])
                         }
                     }
 

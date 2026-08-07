@@ -13,7 +13,17 @@ mostly re-shows the *same* hundreds of already-imported photos on every
 scan (only a handful of new ones each time), and re-running exiftool/ffmpeg
 for all of them every time the picker opens was the single biggest cost in
 that path. A changed mtime/size naturally misses the cache and just
-re-extracts, so this needs no explicit invalidation."""
+re-extracts, so this needs no explicit invalidation.
+
+Cached bytes are shrunk to CACHE_MAX_DIMENSION before ever being written,
+not just before display -- confirmed live that caching the raw extraction
+as-is (the first version of this cache) let individual entries run to
+10+MB (some embedded RAW previews are near-full-resolution) and the whole
+cache to 3.6GB for one device's camera roll, and, worse, that decoding a
+multi-MB JPEG on every redisplay is itself slow enough (and blows Qt's own
+modest default in-memory pixmap cache budget) that a "cached" thumbnail
+still looked and felt uncached to the user. Nothing in this app ever
+displays a thumbnail larger than ~200px."""
 from __future__ import annotations
 
 import hashlib
@@ -24,7 +34,7 @@ import tempfile
 from pathlib import Path
 from urllib.parse import unquote
 
-from PySide6.QtCore import QSize, Qt
+from PySide6.QtCore import QBuffer, QIODeviceBase, QSize, Qt
 from PySide6.QtGui import QImage
 from PySide6.QtQuick import QQuickImageProvider
 
@@ -38,6 +48,8 @@ VIDEO_FRAME_TIMEOUT_S = 15
 # clips; the "00:00:00" retry covers clips shorter than that (ffmpeg
 # fails outright rather than clamping when -ss lands past the last frame).
 VIDEO_FRAME_SEEK_OFFSETS = ("00:00:00.5", "00:00:00")
+CACHE_MAX_DIMENSION = 320
+CACHE_JPEG_QUALITY = 85
 
 
 def _cache_path(path: str) -> Path | None:
@@ -85,9 +97,26 @@ class ThumbnailImageProvider(QQuickImageProvider):
             except OSError:
                 pass  # not cached (or unreadable) -- fall through to extracting it
         raw = self._extract_video_frame(path) if scanner.is_video(Path(path)) else self._extract_preview(path)
-        if raw is not None and cache_path is not None:
-            self._write_cache(cache_path, raw)
-        return raw
+        if raw is None:
+            return None
+        thumbnail = self._shrink(raw)
+        if cache_path is not None:
+            self._write_cache(cache_path, thumbnail)
+        return thumbnail
+
+    def _shrink(self, raw: bytes) -> bytes:
+        image = QImage.fromData(raw)
+        if image.isNull() or (image.width() <= CACHE_MAX_DIMENSION and image.height() <= CACHE_MAX_DIMENSION):
+            return raw  # already small (e.g. the ffmpeg frame, extracted at 320 already), or undecodable -- leave as-is
+        scaled = image.scaled(
+            CACHE_MAX_DIMENSION, CACHE_MAX_DIMENSION,
+            Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation,
+        )
+        buffer = QBuffer()
+        buffer.open(QIODeviceBase.OpenModeFlag.WriteOnly)
+        if not scaled.save(buffer, "JPEG", CACHE_JPEG_QUALITY):
+            return raw  # re-encode failed for some reason -- better a big thumbnail than none
+        return bytes(buffer.data())
 
     def _write_cache(self, cache_path: Path, raw: bytes) -> None:
         # Multiple images can be requested concurrently (QML runs this

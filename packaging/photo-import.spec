@@ -1,5 +1,5 @@
 Name:           photo-import
-Version:        0.2.23
+Version:        0.2.24
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -151,6 +151,30 @@ done
 %{_userunitdir}/%{name}.service
 
 %changelog
+* Fri Aug 07 2026 Photo Import <noreply@example.com> - 0.2.24-1
+- Fixed thumbnails feeling like they were never actually cached: the
+  disk cache added in 0.2.21 stored the *raw* extracted preview/frame as-
+  is, and some embedded RAW previews turn out to be near-full-resolution
+  -- confirmed live, 605 cached files running to 3.6GB total, individual
+  entries up to 14MB, for one device's camera roll. Nothing in this app
+  ever displays a thumbnail larger than ~200px. Decoding a multi-MB JPEG
+  on every redisplay (and blowing Qt's own modest default in-memory
+  pixmap cache budget doing it) was slow enough that a technically-cached
+  thumbnail still looked and felt uncached. Extracted previews/frames are
+  now shrunk to 320px before ever being written to the cache -- the
+  real-world example above dropped from single-digit-MB to ~15KB. The
+  cache directory is now versioned (thumbnails/v2) so old oversized
+  entries are cleanly abandoned rather than continuing to be served.
+- Added visible, always-on, draggable scrollbars (new ThemedScrollBar
+  component) to the source picker's thumbnail grid and the session-
+  detail file list -- previously QtQuick Controls' default transient,
+  hover-only scrollbar, easy to miss entirely on a long photo list.
+- Added a way to unmark a file as already imported: clicking a picker
+  tile's "Imported" badge now removes its dedup-ledger entry (never
+  touches an already-placed file, just the bookkeeping record) so it
+  shows up as new again on the next scan -- the missing reverse of the
+  existing "Have it" action, for when a file gets marked by mistake.
+
 * Fri Aug 07 2026 Photo Import <noreply@example.com> - 0.2.23-1
 - Fixed the real cause of imports getting permanently stuck showing
   "Filing X/Y" forever, root-caused live with py-spy + the journal: a

@@ -503,6 +503,41 @@ class AppController(QObject):
             kind=kind, selected_filenames=names, mark_only=True,
         ))
 
+    @Slot(str, 'QVariantList')
+    def unmarkImported(self, source_key: str, filenames: list) -> None:
+        """Reverses markAlreadyImported (or forgets a genuine past import
+        -- this only ever forgets the dedup-ledger record, never touches
+        an already-placed file): these files show up as new again on the
+        next scan. No hashing needed -- a cheap metadata-only re-scan is
+        enough to recover the same (camera_model, filename, size) key
+        quick_duplicate_match/markAlreadyImported used to record it, so
+        this is effectively instant, unlike a real import."""
+        resolved = self._resolve_selection(source_key, filenames)
+        if resolved is None:
+            return
+        entry, names = resolved
+        root = Path(entry["rootPath"])
+        try:
+            files = [f for f in scanner.find_importable_files(root) if f.name in names]
+        except OSError:
+            self.toast.emit("That source is no longer available.")
+            return
+        metadata = scanner.read_metadata(files)
+        removed = 0
+        with self._conn:
+            for f in files:
+                cand = metadata.get(f)
+                if cand is None:
+                    continue
+                cur = self._conn.execute(
+                    "DELETE FROM imports WHERE camera_model = ? AND source_filename = ? AND source_bytes = ?",
+                    (cand.camera_model, f.name, cand.size_bytes),
+                )
+                removed += cur.rowcount
+        if removed:
+            self.toast.emit(f"Unmarked {removed} file{'s' if removed != 1 else ''} -- they'll show as new again.")
+        self._stats_worker.request(source_key, entry["rootPath"])
+
     # --- notifications --------------------------------------------------------------
 
     def _on_notification_open(self, session_id: int) -> None:

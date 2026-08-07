@@ -165,3 +165,23 @@ class DedupLookupTests(IsolatedTestCase):
         self.assertEqual(scanner.hash_duplicate_check(self.conn, "deadbeef"), "/lib/a.dng")
         # A different filename/size never quick-matches even for the same model.
         self.assertIsNone(scanner.quick_duplicate_match(self.conn, "ILCE-7RM3", "b.arw", 100))
+
+    def test_removing_a_ledger_entry_makes_it_show_as_new_again(self):
+        # Mirrors AppController.unmarkImported's DELETE -- the whole point
+        # of "unmark" is that this needs no hashing, just the same
+        # (camera_model, filename, size) key quick_duplicate_match uses.
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO imports (source_hash, source_filename, source_bytes, camera_model, "
+                "captured_at, dest_path, dest_bytes, session_id, imported_at) "
+                "VALUES ('h', 'a.mov', 100, 'ILCE-7RM3', NULL, '', 0, NULL, 't')"
+            )
+        self.assertIsNotNone(scanner.quick_duplicate_match(self.conn, "ILCE-7RM3", "a.mov", 100))
+
+        with self.conn:
+            self.conn.execute(
+                "DELETE FROM imports WHERE camera_model = ? AND source_filename = ? AND source_bytes = ?",
+                ("ILCE-7RM3", "a.mov", 100),
+            )
+
+        self.assertIsNone(scanner.quick_duplicate_match(self.conn, "ILCE-7RM3", "a.mov", 100))

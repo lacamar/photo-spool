@@ -23,8 +23,15 @@ def cache_home() -> Path:
 def thumbnail_cache_dir() -> Path:
     """Extracted-preview cache for ThumbnailImageProvider -- keyed by
     (path, mtime, size), so it's disposable and safe to wipe entirely at
-    any time (a cache miss just re-extracts, same as today)."""
-    return cache_home() / "thumbnails"
+    any time (a cache miss just re-extracts, same as today). The "v2"
+    component is a cache *format* version, bumped when what gets written
+    here changes shape -- v1 cached the raw, unshrunk extraction (up to
+    10+MB per entry, 3.6GB total for one real device's camera roll,
+    confirmed live), v2 shrinks to a real thumbnail size before writing.
+    Versioning the directory lets old-format entries be abandoned
+    outright instead of needing to be detected and migrated; bump this
+    again the next time the cached format changes."""
+    return cache_home() / "thumbnails" / "v2"
 
 
 def db_path() -> Path:

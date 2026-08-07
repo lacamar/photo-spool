@@ -46,6 +46,7 @@ Item {
             clip: true
             spacing: 4
             model: root.files
+            ScrollBar.vertical: ThemedScrollBar {}
 
             delegate: Rectangle {
                 width: ListView.view.width

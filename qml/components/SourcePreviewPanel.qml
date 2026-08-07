@@ -22,9 +22,20 @@ Rectangle {
     }
 
     function openFor(key, sourceLabel) {
+        // Reopening the same source keeps showing its previous scan's
+        // items (thumbnails and all -- already on disk, see
+        // ThumbnailImageProvider's cache) while a fresh scan runs in the
+        // background, instead of clearing to blank first. That "blank,
+        // then repopulate" flash on every single reopen made the grid
+        // look like it forgot everything it had already loaded, even
+        // though the underlying thumbnails were genuinely still cached.
+        // Switching to a genuinely different source has nothing to carry
+        // over, so it still clears immediately.
+        if (root.sourceKey !== key) {
+            root.items = []
+        }
         root.sourceKey = key
         root.label = sourceLabel
-        root.items = []
         root.selected = ({})
         root.errorText = ""
         root.loading = true
@@ -46,55 +57,77 @@ Rectangle {
         root.selected = m
     }
 
+    // Reassigning root.items wholesale (unavoidable -- a plain `var`
+    // array has no granular change notification, so GridView can only
+    // ever see this as "the model changed", not "these few items
+    // changed") resets GridView's scroll position to the top, same as any
+    // other model reset. Save/restore contentY around it so mark/unmark
+    // doesn't visibly yank the view back to the top of a long grid.
+    // Deferred one tick (Qt.callLater) since the reset itself happens
+    // synchronously as part of the assignment above it.
+    function _preserveScroll(fn) {
+        var savedY = grid.contentY
+        fn()
+        Qt.callLater(function() { grid.contentY = savedY })
+    }
+
     // Records these as already-imported (dedup ledger only, nothing
     // copied/converted) and optimistically greys them out locally so the
     // grid doesn't wait on a re-scan to reflect it.
     function markOwned(filenames) {
         if (filenames.length === 0) return
         appController.markAlreadyImported(root.sourceKey, filenames)
-        var nameSet = {}
-        for (var i = 0; i < filenames.length; i++) nameSet[filenames[i]] = true
-        var newItems = []
-        for (var j = 0; j < root.items.length; j++) {
-            var it = root.items[j]
-            if (nameSet[it.filename]) {
-                var copy = Object.assign({}, it)
-                copy.alreadyImported = true
-                newItems.push(copy)
-            } else {
-                newItems.push(it)
+        _preserveScroll(function() {
+            var nameSet = {}
+            for (var i = 0; i < filenames.length; i++) nameSet[filenames[i]] = true
+            var newItems = []
+            for (var j = 0; j < root.items.length; j++) {
+                var it = root.items[j]
+                if (nameSet[it.filename]) {
+                    var copy = Object.assign({}, it)
+                    copy.alreadyImported = true
+                    newItems.push(copy)
+                } else {
+                    newItems.push(it)
+                }
             }
-        }
-        root.items = newItems
-        var m = Object.assign({}, root.selected)
-        for (var k = 0; k < filenames.length; k++) delete m[filenames[k]]
-        root.selected = m
+            root.items = newItems
+            var m = Object.assign({}, root.selected)
+            for (var k = 0; k < filenames.length; k++) delete m[filenames[k]]
+            root.selected = m
+        })
     }
 
     // Reverses markOwned -- forgets the dedup-ledger entry so these show
     // as new again on the next scan, and optimistically un-greys them
     // locally (preselected, same as any other new file) rather than
-    // waiting on a re-scan to reflect it.
-    function unmarkOwned(filenames) {
-        if (filenames.length === 0) return
-        appController.unmarkImported(root.sourceKey, filenames)
-        var nameSet = {}
-        for (var i = 0; i < filenames.length; i++) nameSet[filenames[i]] = true
-        var newItems = []
-        for (var j = 0; j < root.items.length; j++) {
-            var it = root.items[j]
-            if (nameSet[it.filename]) {
-                var copy = Object.assign({}, it)
-                copy.alreadyImported = false
-                newItems.push(copy)
-            } else {
-                newItems.push(it)
+    // waiting on a re-scan to reflect it. Takes paths (matched against
+    // modelData.path), not filenames: appController.unmarkImported reads
+    // metadata straight from these exact paths instead of re-scanning the
+    // whole source directory to re-derive them, which would (and, before
+    // this, did) freeze the UI for however long that scan takes.
+    function unmarkOwned(paths) {
+        if (paths.length === 0) return
+        appController.unmarkImported(root.sourceKey, paths)
+        _preserveScroll(function() {
+            var pathSet = {}
+            for (var i = 0; i < paths.length; i++) pathSet[paths[i]] = true
+            var newItems = []
+            var m = Object.assign({}, root.selected)
+            for (var j = 0; j < root.items.length; j++) {
+                var it = root.items[j]
+                if (pathSet[it.path]) {
+                    var copy = Object.assign({}, it)
+                    copy.alreadyImported = false
+                    newItems.push(copy)
+                    m[it.filename] = true
+                } else {
+                    newItems.push(it)
+                }
             }
-        }
-        root.items = newItems
-        var m = Object.assign({}, root.selected)
-        for (var k = 0; k < filenames.length; k++) m[filenames[k]] = true
-        root.selected = m
+            root.items = newItems
+            root.selected = m
+        })
     }
 
     Connections {
@@ -140,13 +173,13 @@ Rectangle {
                 elide: Text.ElideRight
             }
             Text {
-                visible: !root.loading && root.errorText.length === 0
+                visible: root.errorText.length === 0 && root.items.length > 0
                 text: root.selectedCount + " of " + root.items.length + " selected"
                 color: Theme.textSecondary
                 font.pixelSize: 11
             }
             Text {
-                visible: !root.loading && root.items.length > 0
+                visible: root.items.length > 0
                 text: "Select all"
                 color: Theme.accent
                 font.pixelSize: 11
@@ -154,7 +187,7 @@ Rectangle {
                     onClicked: root.setAll(true) }
             }
             Text {
-                visible: !root.loading && root.items.length > 0
+                visible: root.items.length > 0
                 text: "Select none"
                 color: Theme.accent
                 font.pixelSize: 11
@@ -166,7 +199,7 @@ Rectangle {
                 // ones you already have, then pick which of the two
                 // actions applies to that selection, instead of the old
                 // inverted "mark whatever's left unchecked" flow.
-                visible: !root.loading && root.items.length > 0
+                visible: root.items.length > 0
                 text: "Mark selected as already imported"
                 color: Theme.textSecondary
                 opacity: root.selectedCount > 0 ? 1.0 : 0.5
@@ -196,12 +229,24 @@ Rectangle {
         }
 
         Text {
-            visible: root.loading
+            // Full-height "Scanning..." only for the true first-load
+            // blank state; reopening a source that already has items
+            // shown gets a much quieter inline hint instead (see below),
+            // and the grid stays up throughout.
+            visible: root.loading && root.items.length === 0
             text: "Scanning for photos…"
             color: Theme.textSecondary
             font.pixelSize: 12
             Layout.alignment: Qt.AlignHCenter
             Layout.topMargin: 20
+        }
+
+        Text {
+            visible: root.loading && root.items.length > 0
+            text: "Refreshing…"
+            color: Theme.textSecondary
+            font.pixelSize: 10
+            Layout.alignment: Qt.AlignHCenter
         }
 
         Text {
@@ -224,7 +269,7 @@ Rectangle {
 
         GridView {
             id: grid
-            visible: !root.loading && root.items.length > 0
+            visible: root.items.length > 0
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
@@ -315,7 +360,7 @@ Rectangle {
                             anchors.margins: -3
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: root.unmarkOwned([modelData.filename])
+                            onClicked: root.unmarkOwned([modelData.path])
                         }
                     }
 

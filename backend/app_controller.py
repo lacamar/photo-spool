@@ -504,23 +504,22 @@ class AppController(QObject):
         ))
 
     @Slot(str, 'QVariantList')
-    def unmarkImported(self, source_key: str, filenames: list) -> None:
+    def unmarkImported(self, source_key: str, file_paths: list) -> None:
         """Reverses markAlreadyImported (or forgets a genuine past import
         -- this only ever forgets the dedup-ledger record, never touches
         an already-placed file): these files show up as new again on the
-        next scan. No hashing needed -- a cheap metadata-only re-scan is
-        enough to recover the same (camera_model, filename, size) key
-        quick_duplicate_match/markAlreadyImported used to record it, so
-        this is effectively instant, unlike a real import."""
-        resolved = self._resolve_selection(source_key, filenames)
-        if resolved is None:
-            return
-        entry, names = resolved
-        root = Path(entry["rootPath"])
-        try:
-            files = [f for f in scanner.find_importable_files(root) if f.name in names]
-        except OSError:
-            self.toast.emit("That source is no longer available.")
+        next scan. Takes exact file paths (the picker already has them,
+        from the same items list it got them in) rather than filenames to
+        re-derive via a directory scan -- this runs synchronously on the
+        GUI thread (unlike markAlreadyImported, which is quiet but still
+        goes through ImportWorker's background thread), so a
+        find_importable_files() walk of the whole source root here would
+        freeze the UI for however long that scan takes. Confirmed live:
+        over a slow AFC-mounted iPhone, that's multiple seconds, not the
+        near-instant this is supposed to be -- exiftool reading just the
+        handful of files actually being unmarked stays fast."""
+        files = [Path(str(p)) for p in file_paths if p]
+        if not files:
             return
         metadata = scanner.read_metadata(files)
         removed = 0
@@ -536,7 +535,9 @@ class AppController(QObject):
                 removed += cur.rowcount
         if removed:
             self.toast.emit(f"Unmarked {removed} file{'s' if removed != 1 else ''} -- they'll show as new again.")
-        self._stats_worker.request(source_key, entry["rootPath"])
+        entry = self.sourcesModel.entry_for(source_key)
+        if entry is not None and entry["rootPath"]:
+            self._stats_worker.request(source_key, entry["rootPath"])
 
     # --- notifications --------------------------------------------------------------
 

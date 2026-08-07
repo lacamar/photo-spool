@@ -1,5 +1,5 @@
 Name:           photo-import
-Version:        0.2.24
+Version:        0.2.25
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -151,6 +151,31 @@ done
 %{_userunitdir}/%{name}.service
 
 %changelog
+* Fri Aug 07 2026 Photo Import <noreply@example.com> - 0.2.25-1
+- Fixed unmarking a file freezing the UI for several seconds: it was
+  re-deriving the file's metadata via a full recursive scan of the whole
+  source directory (find_importable_files), running synchronously on the
+  GUI thread -- over a slow AFC-mounted iPhone that's multiple seconds of
+  frozen interface, confirmed live (0.12s after the fix, down from
+  multiple seconds). unmarkImported now takes the exact file path the
+  picker already has instead of re-deriving it.
+- Fixed marking/unmarking a file jumping the thumbnail grid back to the
+  top: reassigning the whole items array (unavoidable -- a plain array
+  has no granular change notification) resets GridView's scroll position
+  like any other model reset. Now saves and restores scroll position
+  around it.
+- Fixed the picker looking like it forgot everything on every reopen: it
+  cleared to blank and hid the grid immediately on every open, even
+  though the underlying thumbnails were already sitting in the on-disk
+  cache. Reopening the same source now keeps the previous scan's grid
+  (thumbnails and all) visible while a fresh scan runs quietly in the
+  background, with a small "Refreshing…" hint instead of blanking first.
+- Fixed the source strip's "+ Folder" button sitting flush against the
+  rightmost device card with no gap (ListView's own spacing doesn't
+  reliably apply before a footer item).
+- Device cards now use distinct icons per device type (💾 SD/storage,
+  📷 MTP camera, 📱 iPhone, 📁 folder) instead of plain geometric shapes.
+
 * Fri Aug 07 2026 Photo Import <noreply@example.com> - 0.2.24-1
 - Fixed thumbnails feeling like they were never actually cached: the
   disk cache added in 0.2.21 stored the *raw* extracted preview/frame as-

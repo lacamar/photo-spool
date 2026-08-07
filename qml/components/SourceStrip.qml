@@ -22,6 +22,16 @@ Item {
         }
     }
 
+    function kindIcon(kind) {
+        switch (kind) {
+        case "blockdev": return "💾"
+        case "mtp": return "📷"
+        case "iphone": return "📱"
+        case "folder": return "📁"
+        default: return "🔌"
+        }
+    }
+
     function formatBytes(n) {
         if (n <= 0) return "0 B"
         var units = ["B", "KB", "MB", "GB", "TB"]
@@ -69,11 +79,7 @@ Item {
                 visible: !model.mounted
 
                 Text {
-                    text: model.kind === "blockdev" ? "◉"
-                          : model.kind === "mtp" ? "◎"
-                          : model.kind === "iphone" ? "▯"
-                          : model.kind === "folder" ? "▢" : "◇"
-                    color: Theme.textPrimary
+                    text: root.kindIcon(model.kind)
                     font.pixelSize: 26
                     Layout.alignment: Qt.AlignHCenter
                 }
@@ -125,11 +131,7 @@ Item {
                     spacing: 6
 
                     Text {
-                        text: model.kind === "blockdev" ? "◉"
-                              : model.kind === "mtp" ? "◎"
-                              : model.kind === "iphone" ? "▯"
-                              : model.kind === "folder" ? "▢" : "◇"
-                        color: Theme.textPrimary
+                        text: root.kindIcon(model.kind)
                         font.pixelSize: 18
                     }
                     Text {
@@ -218,29 +220,40 @@ Item {
             }
         }
 
-        footer: Rectangle {
-            width: 84
+        // ListView's own `spacing` doesn't reliably apply between the
+        // last delegate and the footer -- confirmed visually, the
+        // footer sat flush against the rightmost card with no gap at
+        // all. Wrapped in a plain Item so the gap is explicit (x offset)
+        // rather than relying on that.
+        footer: Item {
+            width: 84 + 10
             height: 144
-            radius: Theme.radiusMedium
-            color: addMouse.containsMouse ? Theme.chipBackground : "transparent"
-            border.width: 1
-            border.color: Theme.border
 
-            Behavior on color { ColorAnimation { duration: Theme.animFast } }
+            Rectangle {
+                x: 10
+                width: 84
+                height: 144
+                radius: Theme.radiusMedium
+                color: addMouse.containsMouse ? Theme.chipBackground : "transparent"
+                border.width: 1
+                border.color: Theme.border
 
-            Text {
-                anchors.centerIn: parent
-                text: "+ Folder"
-                color: Theme.textSecondary
-                font.pixelSize: 12
-            }
+                Behavior on color { ColorAnimation { duration: Theme.animFast } }
 
-            MouseArea {
-                id: addMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: addFolderDialog.open()
+                Text {
+                    anchors.centerIn: parent
+                    text: "+ Folder"
+                    color: Theme.textSecondary
+                    font.pixelSize: 12
+                }
+
+                MouseArea {
+                    id: addMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: addFolderDialog.open()
+                }
             }
         }
     }

@@ -17,6 +17,21 @@ Item {
         root.files = appController.getSessionFiles(id)
     }
 
+    // openFor() is a one-shot snapshot -- if the user reaches this view for
+    // a session that's still running (e.g. clicking a "just started"
+    // notification), the file list would otherwise never update again
+    // until reopened. activeSessionChanged already fires on every progress
+    // tick for whichever session is currently active, so piggyback on it
+    // rather than adding a new backend signal just for this.
+    Connections {
+        target: appController
+        function onActiveSessionChanged() {
+            if (root.sessionId !== -1 && root.sessionId === appController.activeSessionId) {
+                root.files = appController.getSessionFiles(root.sessionId)
+            }
+        }
+    }
+
     function statusColor(status) {
         switch (status) {
         case "imported": return Theme.healthFresh

@@ -194,6 +194,95 @@ class MarkOnlyTests(ImportWorkerTestCase):
             mock_stage.assert_not_called()
 
 
+class IntraBatchDuplicateContentTests(ImportWorkerTestCase):
+    """Two source files with byte-identical content but different names in
+    the *same* batch -- confirmed possible in the wild (some cards/cameras
+    keep more than one copy of an identical shot). Before this fix: for a
+    real import, both staged to the same {hash}.ext path and both entered
+    the placement loop, so the second's shutil.move raced the first's
+    already-moved-away file and got misreported as "failed" with a
+    confusing ENOENT message; for mark_only, both INSERTs targeted the same
+    UNIQUE source_hash and the second raised an uncaught IntegrityError that
+    killed the whole session silently (stuck at status "running" forever)."""
+
+    def test_duplicate_content_video_recorded_as_duplicate_not_failed(self):
+        content = b"identical video bytes" * 10000
+        (self.source_root / "a.mov").write_bytes(content)
+        (self.source_root / "b.mov").write_bytes(content)
+
+        session_id = self._run()
+        row = self._session(session_id)
+        self.assertEqual(row["status"], "completed")
+        self.assertEqual(row["imported_count"], 1)
+        self.assertEqual(row["duplicate_count"], 1)
+        self.assertEqual(row["failed_count"], 0)
+
+        statuses = {
+            r["source_filename"]: r["status"]
+            for r in self.conn.execute(
+                "SELECT source_filename, status FROM session_files WHERE session_id = ?", (session_id,)
+            )
+        }
+        self.assertEqual(statuses, {"a.mov": "imported", "b.mov": "duplicate"})
+
+    def test_duplicate_content_video_dest_path_points_at_the_placed_file(self):
+        content = b"identical video bytes" * 10000
+        (self.source_root / "a.mov").write_bytes(content)
+        (self.source_root / "b.mov").write_bytes(content)
+
+        session_id = self._run()
+        imported_dest = self.conn.execute(
+            "SELECT dest_path FROM session_files WHERE session_id = ? AND source_filename = 'a.mov'", (session_id,)
+        ).fetchone()["dest_path"]
+        duplicate_dest = self.conn.execute(
+            "SELECT dest_path FROM session_files WHERE session_id = ? AND source_filename = 'b.mov'", (session_id,)
+        ).fetchone()["dest_path"]
+        self.assertTrue(imported_dest)
+        self.assertEqual(imported_dest, duplicate_dest)
+        # Only one row in the ledger -- source_hash is UNIQUE, and this
+        # content was only ever placed once.
+        self.assertEqual(
+            self.conn.execute("SELECT COUNT(*) AS n FROM imports WHERE source_hash IS NOT NULL").fetchone()["n"], 1
+        )
+
+    def test_duplicate_content_raw_converted_once_not_twice(self):
+        content = b"identical raw bytes" * 10000
+        (self.source_root / "DSC00001.ARW").write_bytes(content)
+        (self.source_root / "DSC00002.ARW").write_bytes(content)
+        convert_calls = []
+
+        def spy_convert_batch(dnglab_path, staging_in, staging_out, compression, embed_raw, on_progress=None):
+            convert_calls.append([p.name for p in staging_in.iterdir()])
+            return _fake_convert_batch(dnglab_path, staging_in, staging_out, compression, embed_raw, on_progress)
+
+        request = ImportRequest(source_root=str(self.source_root), device_label="Test", kind="blockdev")
+        with mock.patch("backend.import_worker.converter.convert_batch", side_effect=spy_convert_batch), \
+             mock.patch("backend.import_worker.dnglab_setup.ensure", return_value=Path("/fake/dnglab")):
+            self.worker._run_session(self.conn, request)
+
+        # Only one physical file ever reached dnglab for this one unique hash.
+        self.assertEqual(len(convert_calls[0]), 1)
+        session_id = self.conn.execute("SELECT id FROM sessions ORDER BY id DESC LIMIT 1").fetchone()["id"]
+        row = self._session(session_id)
+        self.assertEqual(row["imported_count"], 1)
+        self.assertEqual(row["duplicate_count"], 1)
+        self.assertEqual(row["failed_count"], 0)
+
+    def test_mark_only_duplicate_content_does_not_crash_the_session(self):
+        content = b"identical video bytes" * 10000
+        (self.source_root / "a.mov").write_bytes(content)
+        (self.source_root / "b.mov").write_bytes(content)
+
+        session_id = self._run(mark_only=True)
+        row = self._session(session_id)
+        self.assertEqual(row["status"], "completed")  # not stuck at "running"
+        self.assertEqual(row["imported_count"], 1)
+        self.assertEqual(row["duplicate_count"], 1)
+        self.assertEqual(
+            self.conn.execute("SELECT COUNT(*) AS n FROM imports").fetchone()["n"], 1
+        )
+
+
 class SelectedFilenamesTests(ImportWorkerTestCase):
     def test_only_selected_files_are_processed(self):
         (self.source_root / "a.mov").write_bytes(b"a" * 1000)

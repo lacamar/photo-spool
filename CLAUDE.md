@@ -111,10 +111,13 @@ sub-second/file — without phase-aware progress the checking phase looks hung.
 - Dedup is two-tier: a cheap `(camera_model, filename, size_bytes)` pre-check
   (`scanner.quick_duplicate_check`) before ever hashing, then authoritative sha256 content-hash dedup
   (`scanner.hash_file` / `hash_duplicate_check`) only for files that pass the pre-check.
-- Files already in DNG form (`scanner.is_dng`) skip dnglab entirely and are copied straight through
-  (`shutil.copy2`, not moved) — iPhone ProRAW and any native-DNG camera. Everything else is symlinked by
-  content-hash into a scratch staging dir and run through one batched `dnglab convert -r` invocation
-  (`converter.convert_batch`), whose `-v` output is streamed to report per-file progress.
+- Every source file is hashed and staged (a real copy, not a symlink — see `scanner.hash_and_stage`) into a
+  scratch dir exactly once, whether it ends up converted or passed through, so a slow source (confirmed
+  live: an iPhone's AFC mount) is never read twice. Files already in DNG form (`scanner.is_dng`) or videos
+  skip dnglab entirely and are `shutil.move`d straight from that staged copy into the library — the
+  original source file itself is never touched either way. Everything else's staged copy is run through one
+  batched `dnglab convert -r` invocation (`converter.convert_batch`), whose `-v` output is streamed to
+  report per-file progress, and the converted output is then moved into place the same way.
 - `RAW_EXTENSIONS` in `scanner.py` is dnglab's *entire* supported-format list (confirmed against dnglab's
   own docs), not a curated subset — a format dnglab can't actually decode just fails that one file with
   dnglab's own error text, never crashes the batch.

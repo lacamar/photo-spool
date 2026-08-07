@@ -192,6 +192,23 @@ class ImportWorker(QThread):
             staging_in.mkdir(parents=True, exist_ok=True)
             staging_copy.mkdir(parents=True, exist_ok=True)
 
+        # Hashes already queued in *this* batch (source_hash -> the filename
+        # that claimed it first). The DB-level dedup check below can't see
+        # these yet -- the earlier file hasn't been placed/recorded -- but
+        # without this, two files with identical content in one batch (real
+        # scenario: some cards/cameras keep more than one copy of the same
+        # shot under different names) would both stage to the same
+        # {hash}.ext path and both land in to_stage; the second one's
+        # shutil.move later races the first for that same staged file (ENOENT
+        # on the loser, wrongly reported as "failed") -- or, for a mark_only
+        # batch, both INSERTs hit the imports.source_hash UNIQUE constraint,
+        # the second raising an uncaught IntegrityError that killed the
+        # whole session silently (left stuck in "running" forever, no error
+        # ever surfaced). Recorded as "duplicate" once the primary's fate
+        # (placed path, or nothing if it failed) is known -- see below.
+        seen_hashes: set[str] = set()
+        intra_batch_duplicates: list[tuple[str, str, int]] = []  # (source_hash, filename, sort_order)
+
         for i, f in enumerate(files):
             self._wait_if_paused()
             self.sessionProgress.emit(session_id, PHASE_CHECKING, i + 1, len(files), f.name)
@@ -228,6 +245,15 @@ class ImportWorker(QThread):
                 self._record_file(conn, session_id, f.name, "duplicate", existing_dest, "", sort_order)
                 sort_order += 1
                 continue
+            if source_hash in seen_hashes:
+                # staged_path (if any) was just overwritten in-place with
+                # identical bytes by the tmp_staged.replace() above -- the
+                # primary's own staged copy at that same hash-named path is
+                # untouched. Nothing to stage or clean up here.
+                intra_batch_duplicates.append((source_hash, f.name, sort_order))
+                sort_order += 1
+                continue
+            seen_hashes.add(source_hash)
             to_stage.append((source_hash, cand, sort_order, staged_path))
             sort_order += 1
 
@@ -249,6 +275,8 @@ class ImportWorker(QThread):
                          cand.captured_at, session_id, now),
                     )
                 self._record_file(conn, session_id, cand.path.name, "imported", "", "", order)
+            for source_hash, filename, order in intra_batch_duplicates:
+                self._record_file(conn, session_id, filename, "duplicate", "", "", order)
             self._finish_session(conn, session_id, "completed", ejectable_path=request.source_root)
             return
 
@@ -300,6 +328,10 @@ class ImportWorker(QThread):
         bytes_saved = 0
         delete_originals = bool(settings.get("delete_originals_after_import"))
         placed = 0
+        # Filled in as each to_stage entry is placed, so any intra_batch_duplicates
+        # sharing that source_hash can be recorded against the same real
+        # destination once it's known (see intra_batch_duplicates comment above).
+        placed_dest: dict[str, str] = {}
 
         def place_file(cand: scanner.Candidate, order: int, source_hash: str, produced: Path,
                         move: bool) -> None:
@@ -343,10 +375,12 @@ class ImportWorker(QThread):
                 # dedup hit rather than crashing the whole session.
                 dest.unlink(missing_ok=True)
                 existing_dest = scanner.hash_duplicate_check(conn, source_hash) or ""
+                placed_dest[source_hash] = existing_dest
                 self._record_file(conn, session_id, cand.path.name, "duplicate", existing_dest, "", order)
                 return
 
             bytes_saved += max(cand.size_bytes - dest_bytes, 0)
+            placed_dest[source_hash] = str(dest)
             self._record_file(conn, session_id, cand.path.name, "imported", str(dest), "", order)
 
             if delete_originals:
@@ -369,6 +403,9 @@ class ImportWorker(QThread):
         for source_hash, cand, order, staged_path in to_copy:
             self._wait_if_paused()
             place_file(cand, order, source_hash, staged_path, move=True)
+
+        for source_hash, filename, order in intra_batch_duplicates:
+            self._record_file(conn, session_id, filename, "duplicate", placed_dest.get(source_hash, ""), "", order)
 
         shutil.rmtree(staging_root, ignore_errors=True)
         with conn:

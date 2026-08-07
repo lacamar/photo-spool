@@ -321,3 +321,36 @@ class MetadataCacheTests(IsolatedTestCase):
         self.assertEqual(result[f2].camera_model, "ILCE-7RM3")
         self.assertTrue(result[f2].camera_model_inferred)
         self.assertEqual(result[f3].camera_model, "ILCE-7RM3")
+
+    def test_size_mismatch_invalidates_cache_entry(self):
+        # A source mount path (e.g. an SD card reader's mountpoint) can get
+        # reused for a *different physical card* between scans -- unlike
+        # this app's own destination-library paths, which are permanent
+        # once written. A cached entry for the old file at that path must
+        # not be handed back for the new, different file now sitting there.
+        f = self.tmp / "a.mov"
+        f.write_bytes(b"x" * 100)
+        old_cand = scanner.Candidate(path=f, size_bytes=100, camera_model="OldCam", captured_at=None)
+        with mock.patch("backend.scanner._read_metadata_uncached", return_value={f: old_cand}):
+            scanner.read_metadata([f], self.conn)  # caches size_bytes=100
+
+        f.write_bytes(b"y" * 250)  # a different, larger file now at the same path
+        new_cand = scanner.Candidate(path=f, size_bytes=250, camera_model="NewCam", captured_at=None)
+        with mock.patch("backend.scanner._read_metadata_uncached", return_value={f: new_cand}) as mocked:
+            result = scanner.read_metadata([f], self.conn)
+            mocked.assert_called_once_with([f])  # cache was rejected, not trusted
+
+        self.assertEqual(result[f].camera_model, "NewCam")
+
+    def test_deleted_file_is_not_served_from_cache(self):
+        f = self.tmp / "a.mov"
+        f.write_bytes(b"x" * 100)
+        cand = scanner.Candidate(path=f, size_bytes=100, camera_model="Cam", captured_at=None)
+        with mock.patch("backend.scanner._read_metadata_uncached", return_value={f: cand}):
+            scanner.read_metadata([f], self.conn)
+
+        f.unlink()
+        with mock.patch("backend.scanner._read_metadata_uncached", return_value={}) as mocked:
+            result = scanner.read_metadata([f], self.conn)
+            mocked.assert_called_once_with([f])
+        self.assertEqual(result, {})

@@ -123,10 +123,10 @@ def read_metadata(files: list[Path], conn: sqlite3.Connection | None = None) -> 
     exiftool read for an iPhone's ~700-file DCIM tree took nearly 21
     seconds, the dominant cost of every single scan (picker open, source-
     card stats refresh, and an import's checking phase) even though the
-    same few hundred files are unchanged scan to scan. No size/mtime
-    re-check on a cache hit: this app never modifies a source file (see
-    the same invariant relied on throughout import_worker.py/paths.py),
-    so a file at a given path can't have different metadata later.
+    same few hundred files are unchanged scan to scan. A cache hit is
+    revalidated against the file's current size (see _load_cached_metadata)
+    since, unlike this app's own destination-library paths, a source mount
+    path can get reused for a different physical card/device between scans.
     Passing conn=None (e.g. from a context with no DB handle) just always
     does the full exiftool read, same as before this cache existed."""
     if not files:
@@ -158,6 +158,22 @@ def _load_cached_metadata(conn: sqlite3.Connection, files: list[Path]) -> dict[P
     for f in files:
         row = by_path.get(str(f))
         if row is None:
+            continue
+        # A cache hit is only trusted if the file's current size still
+        # matches what was cached -- the cache is keyed on path alone, but
+        # a *mount path* (e.g. an SD card reader's /run/media/user/EOS_DIGITAL)
+        # commonly gets reused across different physical cards reformatted
+        # between shoots, unlike this app's own destination-library paths,
+        # which really are permanent once written. A stale hit here would
+        # silently misfile a photo under another card's date/camera model.
+        # Doesn't catch same-size content swaps (rare, and the same blind
+        # spot quick_duplicate_match already accepts elsewhere), but a
+        # stat() is cheap enough to always pay for this extra safety.
+        try:
+            current_size = f.stat().st_size
+        except OSError:
+            continue
+        if current_size != row["size_bytes"]:
             continue
         out[f] = Candidate(
             path=f, size_bytes=row["size_bytes"], camera_model=row["camera_model"],

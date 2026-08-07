@@ -1,5 +1,5 @@
 Name:           photo-import
-Version:        0.2.28
+Version:        0.2.29
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -151,6 +151,32 @@ done
 %{_userunitdir}/%{name}.service
 
 %changelog
+* Fri Aug 07 2026 Photo Import <noreply@example.com> - 0.2.29-1
+- Codebase audit fixes:
+  - Fixed a real correctness bug: two source files with byte-identical
+    content in the same import batch (confirmed possible -- some
+    cards/cameras keep more than one copy of an identical shot under
+    different names) raced each other for the same staged path, so the
+    second was wrongly reported as "failed" (a confusing "No such file or
+    directory" message) instead of "duplicate". For "mark as already
+    imported" batches this was worse: the second file's ledger INSERT hit
+    the imports.source_hash UNIQUE constraint uncaught, silently killing
+    the whole session (left stuck at status "running" forever, no error
+    ever surfaced). Both now correctly record the second file as a
+    duplicate of the first.
+  - The per-file metadata cache (added in 0.2.26) is now revalidated
+    against the file's current size on every cache hit, not trusted on
+    path alone -- a source mount path (e.g. an SD card reader's
+    mountpoint) can get reused across different physical cards between
+    scans, unlike this app's own destination-library paths.
+  - SessionDetailView now stays live if opened for a session that's still
+    running (e.g. via a "just started" notification), instead of showing
+    a one-shot snapshot frozen at open time.
+  - A few stale/missing code comments cleaned up (CLAUDE.md's description
+    of the passthrough/conversion staging flow, a note on
+    unique_dest_path's check-then-use race, a note on the mtime fallback's
+    timezone choice).
+
 * Fri Aug 07 2026 Photo Import <noreply@example.com> - 0.2.28-1
 - When a plain-numbered file and its trailing-letter "deferred processing"
   sibling both exist (e.g. IMG_7731.DNG alongside IMG_7731D.DNG), only the

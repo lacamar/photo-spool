@@ -118,6 +118,11 @@ def library_dest_path(library_root: Path, candidate: "scanner.Candidate", suffix
         # per-file oddity elsewhere in this pipeline.
         d = None
     if d is None:
+        # Deliberately the *local* calendar date (not UTC): mtime is a
+        # point-in-time instant, and converting it via the system's local
+        # timezone gives the same "what day did this happen" the user
+        # would read off their own clock -- consistent with captured_at,
+        # which is already a camera's local wall-clock reading, never UTC.
         d = date.fromtimestamp(candidate.path.stat().st_mtime)
     model = _sanitize(candidate.camera_model)
     seq = scanner.shot_number(candidate.path.name)
@@ -130,7 +135,12 @@ def unique_dest_path(path: Path) -> Path:
     Genuine re-imports of the same shot are already filtered out upstream
     by content-hash dedup, so a collision here means two *different* photos
     landed on the same computed name (e.g. the camera's shot counter
-    rolled over) -- never silently overwrite in that case."""
+    rolled over) -- never silently overwrite in that case.
+
+    Check-then-use, not atomic -- fine today since ImportWorker.run()
+    processes one queued session at a time on a single thread, but would
+    need an atomic reservation (e.g. os.open with O_EXCL) if the import
+    pipeline were ever parallelized across sources."""
     if not path.exists():
         return path
     n = 2

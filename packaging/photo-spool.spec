@@ -1,5 +1,5 @@
 Name:           photo-spool
-Version:        0.3.0
+Version:        0.3.1
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -173,6 +173,17 @@ done
 %{_userunitdir}/%{name}.service
 
 %changelog
+* Mon Aug 17 2026 Photo Spool <noreply@example.com> - 0.3.1-1
+- Session detail view ("view files from this import") no longer lists
+  files with "duplicate" status. Those rows are every already-imported
+  file the scan happened to re-find on the device, so a card/phone
+  carrying a large existing library re-listed almost its entire import
+  history on every plug-in, which read as if the detail view was showing
+  files from unrelated past imports rather than just this one
+  (backend/app_controller.py's getSessionFiles). Imported and failed
+  files still show; the duplicate count is still visible in the
+  SessionCard summary line above the list.
+
 * Mon Aug 17 2026 Photo Spool <noreply@example.com> - 0.3.0-1
 - Renamed the app from Photo Import to Photo Spool (package, systemd user
   service/unit file, desktop file, tray/window/notification text, QML

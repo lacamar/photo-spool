@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Window
-import PhotoImport
+import PhotoSpool
 import "views"
 import "components"
 
@@ -18,7 +18,7 @@ Window {
     height: 720
     minimumWidth: 480
     minimumHeight: 420
-    title: "Photo Import"
+    title: "Photo Spool"
     color: "transparent"
 
     onClosing: (close) => {
@@ -74,7 +74,7 @@ Window {
                 spacing: 10
 
                 Text {
-                    text: "Photo Import"
+                    text: "Photo Spool"
                     font.pixelSize: 18
                     font.weight: Font.Bold
                     color: Theme.textPrimary
@@ -85,11 +85,13 @@ Window {
                 HeaderIconButton {
                     icon: "🔔"
                     badgeCount: appController.unreadCount
+                    tooltip: "Notifications" + (appController.unreadCount > 0 ? " (" + appController.unreadCount + " unread)" : "")
                     onClicked: notifPopup.open()
                 }
 
                 HeaderIconButton {
                     icon: Theme.isDark ? "🌙" : "☀️"
+                    tooltip: Theme.isDark ? "Switch to light mode" : "Switch to dark mode"
                     onClicked: {
                         Theme.mode = Theme.isDark ? "light" : "dark"
                         appController.setSetting("theme_mode", Theme.mode)
@@ -98,11 +100,13 @@ Window {
 
                 HeaderIconButton {
                     icon: "📊"
+                    tooltip: "Library stats"
                     onClicked: { statsView.reload(); statsPopup.open() }
                 }
 
                 HeaderIconButton {
                     icon: "⚙️"
+                    tooltip: "Settings"
                     onClicked: settingsPopup.open()
                 }
             }

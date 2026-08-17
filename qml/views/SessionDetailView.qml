@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import PhotoImport
+import PhotoSpool
 import "../components"
 
 Item {
@@ -77,6 +77,10 @@ Item {
                     hoverEnabled: true
                     cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                     onClicked: appController.openFile(modelData.destPath)
+
+                    ToolTip.visible: enabled && containsMouse
+                    ToolTip.delay: 600
+                    ToolTip.text: "Open " + (modelData.destPath ? modelData.destPath.split("/").pop() : "")
                 }
 
                 RowLayout {
@@ -147,6 +151,10 @@ Item {
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
                             onClicked: appController.revealInFileBrowser(modelData.destPath)
+
+                            ToolTip.visible: containsMouse
+                            ToolTip.delay: 500
+                            ToolTip.text: "Reveal in file browser"
                         }
                     }
                 }
@@ -155,7 +163,7 @@ Item {
             Text {
                 anchors.centerIn: parent
                 visible: root.files.length === 0
-                text: "No file details for this session"
+                text: "Nothing new imported this time"
                 color: Theme.textSecondary
                 font.pixelSize: 12
             }

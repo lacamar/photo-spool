@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Dialogs
 import QtQuick.Layouts
-import PhotoImport
+import PhotoSpool
 import "../components"
 
 Item {
@@ -57,13 +57,14 @@ Item {
                     }
                     Repeater {
                         model: [
-                            { key: "light", label: "Light" },
-                            { key: "dark", label: "Dark" },
-                            { key: "system", label: "Follow system" }
+                            { key: "light", label: "Light", tip: "Always use light mode" },
+                            { key: "dark", label: "Dark", tip: "Always use dark mode" },
+                            { key: "system", label: "Follow system", tip: "Match the system's light/dark setting" }
                         ]
                         delegate: HeaderButton {
                             label: modelData.label
                             prominent: themeGroup.selected === modelData.key
+                            tooltip: modelData.tip
                             onClicked: themeGroup.select(modelData.key)
                         }
                     }
@@ -89,9 +90,14 @@ Item {
                     TextField {
                         id: libraryField
                         Layout.fillWidth: true
+                        hoverEnabled: true
                         onEditingFinished: appController.setSetting("library_root", text)
+
+                        ToolTip.visible: hovered && !activeFocus
+                        ToolTip.delay: 700
+                        ToolTip.text: "Root folder where imported photos are filed"
                     }
-                    HeaderButton { label: "Browse…"; onClicked: libraryDialog.open() }
+                    HeaderButton { label: "Browse…"; tooltip: "Choose a library folder"; onClicked: libraryDialog.open() }
                 }
             }
 
@@ -105,22 +111,50 @@ Item {
                 RowLayout {
                     Layout.fillWidth: true
                     Text { text: "Auto-import when a card or camera is detected"; color: Theme.textPrimary; font.pixelSize: 13; Layout.fillWidth: true; wrapMode: Text.WordWrap }
-                    Switch { id: watchToggle; onToggled: appController.setSetting("watch_enabled", checked) }
+                    Switch {
+                        id: watchToggle
+                        hoverEnabled: true
+                        onToggled: appController.setSetting("watch_enabled", checked)
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 500
+                        ToolTip.text: checked ? "New cards and cameras import automatically" : "Imports only start when you click a device"
+                    }
                 }
                 RowLayout {
                     Layout.fillWidth: true
                     Text { text: "Also watch for cameras and iPhones plugged in over USB"; color: Theme.textPrimary; font.pixelSize: 13; Layout.fillWidth: true; wrapMode: Text.WordWrap }
-                    Switch { id: mtpToggle; onToggled: appController.setSetting("mtp_enabled", checked) }
+                    Switch {
+                        id: mtpToggle
+                        hoverEnabled: true
+                        onToggled: appController.setSetting("mtp_enabled", checked)
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 500
+                        ToolTip.text: "Detect cameras (MTP) and iPhones (AFC) connected directly by USB, not just SD card readers"
+                    }
                 }
                 RowLayout {
                     Layout.fillWidth: true
                     Text { text: "Delete originals from the card after a verified import"; color: Theme.textPrimary; font.pixelSize: 13; Layout.fillWidth: true; wrapMode: Text.WordWrap }
-                    Switch { id: deleteToggle; onToggled: appController.setSetting("delete_originals_after_import", checked) }
+                    Switch {
+                        id: deleteToggle
+                        hoverEnabled: true
+                        onToggled: appController.setSetting("delete_originals_after_import", checked)
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 500
+                        ToolTip.text: "Erase source files once they're confirmed safely imported"
+                    }
                 }
                 RowLayout {
                     Layout.fillWidth: true
                     Text { text: "Notify when an import finishes"; color: Theme.textPrimary; font.pixelSize: 13; Layout.fillWidth: true; wrapMode: Text.WordWrap }
-                    Switch { id: notifyToggle; onToggled: appController.setSetting("notify_on_complete", checked) }
+                    Switch {
+                        id: notifyToggle
+                        hoverEnabled: true
+                        onToggled: appController.setSetting("notify_on_complete", checked)
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 500
+                        ToolTip.text: "Show a desktop notification each time an import session completes"
+                    }
                 }
             }
 
@@ -142,6 +176,7 @@ Item {
                     HeaderButton {
                         visible: !appController.dnglabReady
                         label: "Retry download"
+                        tooltip: "Try downloading the dnglab converter again"
                         onClicked: appController.retryDnglabSetup()
                     }
                 }
@@ -156,12 +191,13 @@ Item {
                     }
                     Repeater {
                         model: [
-                            { key: "lossless", label: "Lossless" },
-                            { key: "uncompressed", label: "Uncompressed" }
+                            { key: "lossless", label: "Lossless", tip: "Compress DNGs losslessly (smaller files, no quality loss)" },
+                            { key: "uncompressed", label: "Uncompressed", tip: "Store DNGs uncompressed (larger files, fastest to convert)" }
                         ]
                         delegate: HeaderButton {
                             label: modelData.label
                             prominent: compressionGroup.selected === modelData.key
+                            tooltip: modelData.tip
                             onClicked: compressionGroup.select(modelData.key)
                         }
                     }
@@ -175,7 +211,14 @@ Item {
                         Layout.fillWidth: true
                         wrapMode: Text.WordWrap
                     }
-                    Switch { id: embedRawToggle; onToggled: appController.setSetting("embed_raw_in_dng", checked) }
+                    Switch {
+                        id: embedRawToggle
+                        hoverEnabled: true
+                        onToggled: appController.setSetting("embed_raw_in_dng", checked)
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 500
+                        ToolTip.text: checked ? "Keeping the exact original raw bytes inside the DNG" : "Storing only the converted DNG data, roughly half the size"
+                    }
                 }
                 Text {
                     text: "Off keeps DNGs roughly half the size of the original raw file (matches Lightroom's default). On preserves the exact original raw bytes inside the DNG, at close to full size."
@@ -189,7 +232,7 @@ Item {
             Rectangle { Layout.fillWidth: true; height: 1; color: Theme.border }
 
             Text {
-                text: "Photo Import v" + appController.appVersion
+                text: "Photo Spool v" + appController.appVersion
                 color: Theme.textSecondary
                 font.pixelSize: 11
                 Layout.fillWidth: true

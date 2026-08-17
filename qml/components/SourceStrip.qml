@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Dialogs
 import QtQuick.Layouts
-import PhotoImport
+import PhotoSpool
 
 Item {
     id: root
@@ -195,6 +195,12 @@ Item {
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: root.sourceClicked(model.sourceKey, model.label)
+
+                ToolTip.visible: containsMouse
+                ToolTip.delay: 500
+                ToolTip.text: model.mounted
+                              ? "Browse " + model.label + " (" + root.kindLabel(model.kind) + ")"
+                              : "Tap to mount " + model.label
             }
 
             // Declared after tileMouse (and so stacked on top of it) --
@@ -216,6 +222,10 @@ Item {
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: appController.removeFolder(model.sourceKey)
+
+                    ToolTip.visible: containsMouse
+                    ToolTip.delay: 500
+                    ToolTip.text: "Stop watching this folder"
                 }
             }
         }
@@ -253,6 +263,10 @@ Item {
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: addFolderDialog.open()
+
+                    ToolTip.visible: containsMouse
+                    ToolTip.delay: 500
+                    ToolTip.text: "Watch an extra folder for new photos"
                 }
             }
         }

@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import PhotoImport
+import PhotoSpool
 
 Item {
     id: root
@@ -43,7 +43,14 @@ Item {
                     text: "↻"
                     color: Theme.accent
                     font.pixelSize: 13
-                    MouseArea { anchors.fill: parent; anchors.margins: -6; cursorShape: Qt.PointingHandCursor; onClicked: root.reload() }
+                    MouseArea {
+                        anchors.fill: parent; anchors.margins: -6; cursorShape: Qt.PointingHandCursor
+                        hoverEnabled: true
+                        onClicked: root.reload()
+                        ToolTip.visible: containsMouse
+                        ToolTip.delay: 500
+                        ToolTip.text: "Refresh stats"
+                    }
                 }
             }
 

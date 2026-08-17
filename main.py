@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Entry point for the Photo Import desktop app."""
+"""Entry point for the Photo Spool desktop app."""
 from __future__ import annotations
 
 import argparse
@@ -10,7 +10,7 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "wayland")
 os.environ.setdefault("QT_QUICK_CONTROLS_STYLE", "Basic")
-# Qt's QML disk bytecode cache (~/.cache/photo-import/.../qmlcache) is meant
+# Qt's QML disk bytecode cache (~/.cache/photo-spool/.../qmlcache) is meant
 # to auto-invalidate when a .qml file's mtime/size changes, but that's
 # fragile across reinstalls (e.g. RPM upgrades, tarballs from `git
 # archive`) -- a stale cache silently keeps serving old compiled QML even
@@ -35,8 +35,8 @@ from backend.thumbnail_provider import ThumbnailImageProvider
 # Arbitrary but fixed name for the single-instance IPC socket -- see
 # _acquire_single_instance below. Bumping this would let two instances run
 # again until both are on a build with the new name, so there's no reason
-# to ever change it.
-SINGLE_INSTANCE_KEY = "photo-import-single-instance"
+# to change it again after this rename.
+SINGLE_INSTANCE_KEY = "photo-spool-single-instance"
 
 
 def _acquire_single_instance(app: QApplication) -> QLocalServer | None:
@@ -69,7 +69,7 @@ def _acquire_single_instance(app: QApplication) -> QLocalServer | None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Photo Import")
+    parser = argparse.ArgumentParser(description="Photo Spool")
     parser.add_argument("--demo", action="store_true", help="Seed demo session history if the database is empty")
     parser.add_argument(
         "--start-hidden", action="store_true",
@@ -80,8 +80,8 @@ def main() -> int:
     # QApplication (not just QGuiApplication) so QtQuick.Dialogs' native
     # folder dialog has QtWidgets available if the platform theme needs it.
     app = QApplication(sys.argv)
-    app.setApplicationName("Photo Import")
-    app.setOrganizationName("photo-import")
+    app.setApplicationName("Photo Spool")
+    app.setOrganizationName("photo-spool")
     # The window's close button hides it instead of closing (see
     # Main.qml's onClosing) so the app keeps importing in the background;
     # this is the belt-and-suspenders match on the Qt side so a hidden
@@ -89,19 +89,19 @@ def main() -> int:
     app.setQuitOnLastWindowClosed(False)
     # Launched via `python3 main.py`, Qt's Wayland platform would otherwise
     # derive the toplevel app_id from the interpreter binary ("python3"),
-    # breaking icon/window-list matching against photo-import.desktop.
-    app.setDesktopFileName("photo-import")
+    # breaking icon/window-list matching against photo-spool.desktop.
+    app.setDesktopFileName("photo-spool")
 
     instance_server = _acquire_single_instance(app)
     if instance_server is None:
         return 0
 
-    icon_path = APP_ROOT / "icons" / "photo-import.svg"
-    app.setWindowIcon(QIcon(str(icon_path)) if icon_path.exists() else QIcon.fromTheme("photo-import"))
+    icon_path = APP_ROOT / "icons" / "photo-spool.svg"
+    app.setWindowIcon(QIcon(str(icon_path)) if icon_path.exists() else QIcon.fromTheme("photo-spool"))
 
     qml_dir = APP_ROOT / "qml"
     theme_url = QUrl.fromLocalFile(str(qml_dir / "Theme.qml"))
-    qmlRegisterSingletonType(theme_url, "PhotoImport", 1, 0, "Theme")
+    qmlRegisterSingletonType(theme_url, "PhotoSpool", 1, 0, "Theme")
 
     engine = QQmlApplicationEngine()
     engine.addImportPath(str(qml_dir))
@@ -169,10 +169,10 @@ def main() -> int:
 
     if QSystemTrayIcon.isSystemTrayAvailable():
         tray = QSystemTrayIcon(app.windowIcon(), app)
-        tray.setToolTip("Photo Import")
+        tray.setToolTip("Photo Spool")
 
         tray_menu = QMenu()
-        show_action = QAction("Open Photo Import", tray_menu)
+        show_action = QAction("Open Photo Spool", tray_menu)
         show_action.triggered.connect(show_window)
         tray_menu.addAction(show_action)
         tray_menu.addSeparator()
@@ -190,7 +190,7 @@ def main() -> int:
             if reason == QSystemTrayIcon.ActivationReason.Trigger:
                 controller.refreshDevices()
                 tray.showMessage(
-                    "Photo Import", "Checked for new photos.",
+                    "Photo Spool", "Checked for new photos.",
                     QSystemTrayIcon.MessageIcon.Information, 2500,
                 )
 

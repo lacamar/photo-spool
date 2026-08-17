@@ -120,8 +120,8 @@ class VideoPassthroughTests(ImportWorkerTestCase):
     def test_staging_dirs_are_cleaned_up_after_the_session(self):
         self._write_video()
         self._run()
-        staging_root = list((self.tmp / "data" / "photo-import" / "staging").iterdir()) \
-            if (self.tmp / "data" / "photo-import" / "staging").is_dir() else []
+        staging_root = list((self.tmp / "data" / "photo-spool" / "staging").iterdir()) \
+            if (self.tmp / "data" / "photo-spool" / "staging").is_dir() else []
         self.assertEqual(staging_root, [])
 
 
@@ -180,7 +180,7 @@ class MarkOnlyTests(ImportWorkerTestCase):
         f = self.source_root / "clip.mov"
         f.write_bytes(b"fake video bytes" * 10000)
         self._run(mark_only=True, selected_filenames=frozenset({"clip.mov"}))
-        staging_dir = self.tmp / "data" / "photo-import" / "staging"
+        staging_dir = self.tmp / "data" / "photo-spool" / "staging"
         if staging_dir.is_dir():
             for session_dir in staging_dir.iterdir():
                 self.assertFalse((session_dir / "in").exists())

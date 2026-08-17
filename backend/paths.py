@@ -5,7 +5,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-APP_NAME = "photo-import"
+APP_NAME = "photo-spool"
+_OLD_APP_NAME = "photo-import"  # pre-rename directory name -- see _migrate_data_home
 
 
 def data_home() -> Path:
@@ -59,6 +60,31 @@ def default_library_root() -> Path:
     return Path(xdg) if xdg else Path.home() / "Pictures"
 
 
+def _migrate_data_home() -> None:
+    """One-time move of the pre-rename data directory (DB, settings, the
+    self-downloaded dnglab binary) from ~/.local/share/photo-import to
+    ~/.local/share/photo-spool, so the app-name rename doesn't silently
+    orphan real session history behind a path nothing reads anymore. Only
+    acts when the new dir doesn't exist yet and the old one does -- once
+    migrated (or on a fresh install with no old dir), this is a no-op
+    forever. A plain os.rename, not a merge: nothing else in this app has
+    ever written to old_home post-rename, so there's nothing to merge."""
+    new_home = data_home()
+    if new_home.exists():
+        return
+    xdg = os.environ.get("XDG_DATA_HOME")
+    base = Path(xdg) if xdg else Path.home() / ".local" / "share"
+    old_home = base / _OLD_APP_NAME
+    if not old_home.exists():
+        return
+    new_home.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        old_home.rename(new_home)
+    except OSError:
+        pass  # cross-filesystem XDG_DATA_HOME override, permissions, etc. -- degrade to a fresh data dir
+
+
 def ensure_dirs() -> None:
+    _migrate_data_home()
     data_home().mkdir(parents=True, exist_ok=True)
     bin_dir().mkdir(parents=True, exist_ok=True)

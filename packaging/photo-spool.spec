@@ -1,14 +1,24 @@
-Name:           photo-import
-Version:        0.2.32
+Name:           photo-spool
+Version:        0.3.0
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
 # Personal/local tool; MIT is just a permissive default -- change freely.
 License:        MIT
-URL:            https://github.com/example/photo-import
+URL:            https://github.com/example/photo-spool
 Source0:        %{name}-%{version}.tar.gz
 
 BuildArch:      noarch
+
+# App rename (photo-import -> photo-spool), same package otherwise -- lets
+# `dnf upgrade`/`dnf install` transition a system with the old name
+# installed (confirmed live on this machine: photo-import has been enabled
+# and running for a week) straight onto this one instead of leaving both
+# installed side by side or erroring out. The XDG data dir itself is
+# migrated separately at runtime (see backend/paths.py's _migrate_data_home)
+# since that lives under $XDG_DATA_HOME, outside anything rpm tracks.
+Provides:       photo-import = %{version}-%{release}
+Obsoletes:      photo-import < %{version}-%{release}
 
 BuildRequires:  desktop-file-utils
 BuildRequires:  librsvg2-tools
@@ -107,7 +117,7 @@ done
 
 # A *user* unit (needs the Wayland session/D-Bus user bus), not a system
 # one -- installed but left disabled by default (no preset ships), so
-# `systemctl --user enable --now photo-import.service` is an opt-in step,
+# `systemctl --user enable --now photo-spool.service` is an opt-in step,
 # not a surprise background app after a routine package upgrade.
 install -Dm644 packaging/%{name}.service %{buildroot}%{_userunitdir}/%{name}.service
 
@@ -163,6 +173,28 @@ done
 %{_userunitdir}/%{name}.service
 
 %changelog
+* Mon Aug 17 2026 Photo Spool <noreply@example.com> - 0.3.0-1
+- Renamed the app from Photo Import to Photo Spool (package, systemd user
+  service/unit file, desktop file, tray/window/notification text, QML
+  module namespace, single-instance IPC key -- everything). Provides/
+  Obsoletes the old photo-import package name so `dnf` upgrades a system
+  with it installed straight onto this one instead of leaving both
+  installed side by side. The XDG data dir (session history DB, settings,
+  the self-downloaded dnglab binary) migrates automatically on first run
+  under the new name (backend/paths.py's _migrate_data_home) -- nothing
+  under $XDG_DATA_HOME/photo-import is lost, it's moved in place the first
+  time the app starts post-upgrade.
+- Note for anyone who already has the old service enabled: the rename
+  means dnf treats this as installing a new package, so
+  %%systemd_user_post's "only auto-enable on a true first install" logic
+  does not carry the old unit's enabled state forward -- re-run
+  `systemctl --user enable --now photo-spool.service` once after
+  upgrading (same one-line opt-in as originally enabling it).
+- Also throttled the background gvfs/idevice_id device-listing subprocess
+  spawns (device_watch.py) to once per MTP_MOUNT_RETRY_S (12s) instead of
+  every ~2.5s poll tick, cutting idle background CPU/process overhead --
+  this app spends most of its life sitting in the tray waiting for a card.
+
 * Fri Aug 07 2026 Photo Import <noreply@example.com> - 0.2.32-1
 - Fixed a packaging bug in %post's own upgrade-restart, confirmed live
   during the 0.2.31 rollout: try-restart could still be using the

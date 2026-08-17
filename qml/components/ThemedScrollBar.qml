@@ -1,6 +1,6 @@
 import QtQuick
 import QtQuick.Controls
-import PhotoImport
+import PhotoSpool
 
 // A slim, always-visible, theme-colored scrollbar -- QtQuick Controls'
 // Basic-style default only shows itself transiently while scrolling/

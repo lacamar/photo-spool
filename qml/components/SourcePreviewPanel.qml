@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import PhotoImport
+import PhotoSpool
 
 Rectangle {
     id: root
@@ -170,7 +170,11 @@ Rectangle {
                 color: Theme.accent
                 font.pixelSize: 11
                 MouseArea { anchors.fill: parent; anchors.margins: -4; cursorShape: Qt.PointingHandCursor
-                    onClicked: root.setAll(true) }
+                    onClicked: root.setAll(true)
+                    hoverEnabled: true
+                    ToolTip.visible: containsMouse
+                    ToolTip.delay: 500
+                    ToolTip.text: "Select every new photo shown below" }
             }
             Text {
                 visible: itemsModel.count > 0
@@ -178,7 +182,11 @@ Rectangle {
                 color: Theme.accent
                 font.pixelSize: 11
                 MouseArea { anchors.fill: parent; anchors.margins: -4; cursorShape: Qt.PointingHandCursor
-                    onClicked: root.setAll(false) }
+                    onClicked: root.setAll(false)
+                    hoverEnabled: true
+                    ToolTip.visible: containsMouse
+                    ToolTip.delay: 500
+                    ToolTip.text: "Clear the current selection" }
             }
             Text {
                 // Same selection the Import button below uses -- check the
@@ -197,6 +205,10 @@ Rectangle {
                         for (var key in root.selected) if (root.selected[key]) names.push(key)
                         root.markOwned(names)
                     }
+                    hoverEnabled: true
+                    ToolTip.visible: containsMouse
+                    ToolTip.delay: 500
+                    ToolTip.text: "Record the selected photos as already in your library, without copying them"
                 }
             }
             HeaderButton {
@@ -204,6 +216,7 @@ Rectangle {
                 prominent: true
                 enabled: root.selectedCount > 0
                 opacity: enabled ? 1.0 : 0.5
+                tooltip: "Convert and copy the selected photos into your library"
                 onClicked: {
                     var names = []
                     for (var key in root.selected) if (root.selected[key]) names.push(key)
@@ -211,7 +224,7 @@ Rectangle {
                     root.closeRequested()
                 }
             }
-            HeaderIconButton { icon: "✕"; onClicked: root.closeRequested() }
+            HeaderIconButton { icon: "✕"; tooltip: "Close preview"; onClicked: root.closeRequested() }
         }
 
         Text {
@@ -299,10 +312,16 @@ Rectangle {
                     // overlay buttons below so they stack on top of it and
                     // can intercept their own clicks instead of this one.
                     MouseArea {
+                        id: tileToggleMouse
                         anchors.fill: parent
                         enabled: !model.alreadyImported
+                        hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
                         onClicked: root.toggle(model.filename)
+
+                        ToolTip.visible: containsMouse
+                        ToolTip.delay: 700
+                        ToolTip.text: (root.selected[model.filename] ? "Deselect " : "Select ") + model.filename
                     }
 
                     Rectangle {
@@ -347,6 +366,10 @@ Rectangle {
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
                             onClicked: root.unmarkOwned([model.path])
+
+                            ToolTip.visible: containsMouse
+                            ToolTip.delay: 500
+                            ToolTip.text: "Already marked as imported — click to undo"
                         }
                     }
 
@@ -395,6 +418,10 @@ Rectangle {
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
                             onClicked: root.markOwned([model.filename])
+
+                            ToolTip.visible: containsMouse
+                            ToolTip.delay: 500
+                            ToolTip.text: "Mark as already imported without copying it"
                         }
                     }
                 }

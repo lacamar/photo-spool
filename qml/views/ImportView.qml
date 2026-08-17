@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import PhotoImport
+import PhotoSpool
 import "../components"
 
 Item {
@@ -86,17 +86,20 @@ Item {
 
                     HeaderIconButton {
                         icon: appController.importsPaused ? "▶" : "⏸"
+                        tooltip: appController.importsPaused ? "Resume imports" : "Pause imports"
                         onClicked: appController.setImportsPaused(!appController.importsPaused)
                     }
 
                     HeaderIconButton {
                         icon: "⟳"
+                        tooltip: "Refresh devices"
                         onClicked: appController.refreshDevices()
                     }
 
                     HeaderIconButton {
                         icon: "🗑"
                         visible: list.count > 0
+                        tooltip: "Clear import history"
                         onClicked: appController.clearHistory()
                     }
                 }

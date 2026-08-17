@@ -14,7 +14,7 @@ from backend import sd_notify
 
 class SdNotifyTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp(prefix="photo-import-test-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="photo-spool-test-"))
         self.sock_path = self.tmp / "notify.sock"
         self.server = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
         self.server.bind(str(self.sock_path))

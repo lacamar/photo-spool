@@ -1,5 +1,5 @@
 [Unit]
-Description=Photo Import (background import service)
+Description=Photo Spool (background import service)
 PartOf=graphical-session.target
 After=graphical-session.target
 StartLimitIntervalSec=60
@@ -9,7 +9,7 @@ StartLimitBurst=5
 Type=notify
 NotifyAccess=main
 WatchdogSec=60
-ExecStart=/usr/bin/photo-import --start-hidden
+ExecStart=/usr/bin/photo-spool --start-hidden
 Restart=on-failure
 RestartSec=5
 

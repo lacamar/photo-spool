@@ -3,7 +3,7 @@ pinned prebuilt release from GitHub into our own data dir on first use if
 it isn't already there. dnglab isn't packaged for Fedora; this is the
 closest equivalent to how Lightroom's DNG conversion just works out of the
 box. No sudo, no system-wide install -- everything lives under
-`$XDG_DATA_HOME/photo-import/bin/`.
+`$XDG_DATA_HOME/photo-spool/bin/`.
 """
 from __future__ import annotations
 
@@ -80,7 +80,7 @@ def download(progress_cb=None) -> Path | None:
     tmp = dest.with_suffix(".part")
     url = f"{RELEASE_BASE}/{asset}"
     try:
-        request = urllib.request.Request(url, headers={"User-Agent": "photo-import"})
+        request = urllib.request.Request(url, headers={"User-Agent": "photo-spool"})
         with urllib.request.urlopen(request, timeout=DOWNLOAD_TIMEOUT_S) as resp:
             total = int(resp.headers.get("Content-Length") or 0)
             written = 0

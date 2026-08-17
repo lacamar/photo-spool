@@ -191,7 +191,7 @@ class AppController(QObject):
         # history/notification-center panel either) -- this fires on every
         # device plug-in and would otherwise clog both; the import_complete
         # notification that follows shortly after is the one worth keeping.
-        self._notification_manager.send("Photo Import", text, transient=True)
+        self._notification_manager.send("Photo Spool", text, transient=True)
         self._submit_import(ImportRequest(source_root=root, device_label=label, kind=kind))
 
     def _submit_import(self, request: ImportRequest) -> bool:
@@ -283,7 +283,7 @@ class AppController(QObject):
             return  # nothing found on the card -- not worth a notification
         notifications.record(self._conn, text, session_id, kind)
         if settings_store.get(self._conn, "notify_on_complete"):
-            self._notification_manager.send("Photo Import", text, session_id)
+            self._notification_manager.send("Photo Spool", text, session_id)
         self.notificationModel.load(self._conn)
         self.unreadNotificationCountChanged.emit()
 
@@ -292,8 +292,16 @@ class AppController(QObject):
 
     @Slot(int, result='QVariantList')
     def getSessionFiles(self, session_id: int) -> list[dict]:
+        # Excludes "duplicate" rows -- session_files records every file the
+        # scan *found*, not just what it imported, so a device carrying a
+        # large already-imported library re-lists nearly its whole history
+        # as duplicates on every subsequent plug-in. The summary line on
+        # SessionCard already reports the duplicate count; this detail view
+        # is for "what did this import actually do", so only files that were
+        # imported or that failed belong here.
         rows = self._conn.execute(
-            "SELECT * FROM session_files WHERE session_id = ? ORDER BY sort_order", (session_id,),
+            "SELECT * FROM session_files WHERE session_id = ? AND status != 'duplicate' "
+            "ORDER BY sort_order", (session_id,),
         ).fetchall()
         return [
             {

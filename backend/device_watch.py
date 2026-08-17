@@ -218,6 +218,7 @@ class DeviceWatcher(QObject):
         self._auto_import_fired: set[str] = set()  # keys that already triggered sourceFound
         self._mtp_mount_attempts: dict[str, float] = {}  # activation uri -> last attempt time
         self._gvfs_fuse_last_check = 0.0
+        self._gvfs_unmounted_list_last_check = 0.0
         self._bus = None
         if dbus is not None:
             try:
@@ -416,41 +417,53 @@ class DeviceWatcher(QObject):
         # but not yet under gvfs_dir, retrying periodically since a camera
         # or phone may need the user to accept a prompt on its own screen
         # first (an iPhone's "Trust This Computer?").
+        #
+        # Unlike the plain iterdir()/D-Bus checks elsewhere in this poll,
+        # _list_unmounted_gvfs_uris/_list_connected_iphone_udids each fork a
+        # real subprocess (`gio mount -li`, `idevice_id -l`). This app
+        # spends most of its life idle in the background (systemd user
+        # service + tray icon, see CLAUDE.md), so running those on every
+        # 2.5s poll tick means ~48 forked processes a minute forever, for a
+        # result that's only ever acted on at most once per
+        # MTP_MOUNT_RETRY_S anyway (the per-item throttle below) -- listing
+        # any more often than that is pure waste, not added responsiveness.
         now = time.monotonic()
-        for uri in self._list_unmounted_gvfs_uris():
-            last = self._mtp_mount_attempts.get(uri, 0.0)
-            if now - last < MTP_MOUNT_RETRY_S:
-                continue
-            self._mtp_mount_attempts[uri] = now
-            try:
-                subprocess.Popen(["gio", "mount", uri], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            except OSError:
-                pass
+        if now - self._gvfs_unmounted_list_last_check >= MTP_MOUNT_RETRY_S:
+            self._gvfs_unmounted_list_last_check = now
+            for uri in self._list_unmounted_gvfs_uris():
+                last = self._mtp_mount_attempts.get(uri, 0.0)
+                if now - last < MTP_MOUNT_RETRY_S:
+                    continue
+                self._mtp_mount_attempts[uri] = now
+                try:
+                    subprocess.Popen(["gio", "mount", uri], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                except OSError:
+                    pass
 
-        # An iPhone's *main* AFC share (the one with DCIM on it) never
-        # actually appears as a listed, mountable Volume in `gio mount
-        # -li` at all -- confirmed live, both on first connect and again
-        # after a physical unplug/replug: only per-app "Files" document
-        # shares (",port=" dirnames) show up there and auto-mount on
-        # their own. The main share has to be mounted by its well-known
-        # afc://<udid>/ URI directly, which is why _list_unmounted_gvfs_uris
-        # above can never find it. idevice_id (usbmuxd) reports physically
-        # connected UDIDs independent of gvfs's own incomplete volume
-        # enumeration, so use that instead to know what to try mounting.
-        for udid in self._list_connected_iphone_udids():
-            if f"afc:host={udid}" in gvfs_dirs:
-                continue  # main share already mounted
-            attempt_key = f"afc-main:{udid}"
-            last = self._mtp_mount_attempts.get(attempt_key, 0.0)
-            if now - last < MTP_MOUNT_RETRY_S:
-                continue
-            self._mtp_mount_attempts[attempt_key] = now
-            try:
-                subprocess.Popen(
-                    ["gio", "mount", f"afc://{udid}/"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                )
-            except OSError:
-                pass
+            # An iPhone's *main* AFC share (the one with DCIM on it) never
+            # actually appears as a listed, mountable Volume in `gio mount
+            # -li` at all -- confirmed live, both on first connect and again
+            # after a physical unplug/replug: only per-app "Files" document
+            # shares (",port=" dirnames) show up there and auto-mount on
+            # their own. The main share has to be mounted by its well-known
+            # afc://<udid>/ URI directly, which is why _list_unmounted_gvfs_uris
+            # above can never find it. idevice_id (usbmuxd) reports physically
+            # connected UDIDs independent of gvfs's own incomplete volume
+            # enumeration, so use that instead to know what to try mounting.
+            for udid in self._list_connected_iphone_udids():
+                if f"afc:host={udid}" in gvfs_dirs:
+                    continue  # main share already mounted
+                attempt_key = f"afc-main:{udid}"
+                last = self._mtp_mount_attempts.get(attempt_key, 0.0)
+                if now - last < MTP_MOUNT_RETRY_S:
+                    continue
+                self._mtp_mount_attempts[attempt_key] = now
+                try:
+                    subprocess.Popen(
+                        ["gio", "mount", f"afc://{udid}/"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    )
+                except OSError:
+                    pass
 
     def _list_connected_iphone_udids(self) -> set[str]:
         try:

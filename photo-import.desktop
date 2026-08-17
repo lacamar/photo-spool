@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Photo Import
-Comment=Automatically import raw photos (converted to lossless DNG) and videos
-Exec=/home/lm/.local/src/claude/photo-import/run.sh
-Icon=/home/lm/.local/src/claude/photo-import/icons/photo-import.svg
-Terminal=false
-Categories=Graphics;Photography;
-StartupWMClass=photo-import

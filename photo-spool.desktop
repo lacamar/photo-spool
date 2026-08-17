@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Photo Spool
+Comment=Automatically import raw photos (converted to lossless DNG) and videos
+Exec=/home/lm/.local/src/photo-spool/run.sh
+Icon=/home/lm/.local/src/photo-spool/icons/photo-spool.svg
+Terminal=false
+Categories=Graphics;Photography;
+StartupWMClass=photo-spool

@@ -1,6 +1,7 @@
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
-import PhotoImport
+import PhotoSpool
 
 Rectangle {
     id: root
@@ -66,12 +67,17 @@ Rectangle {
     Behavior on border.color { ColorAnimation { duration: Theme.animFast } }
 
     MouseArea {
+        id: cardMouse
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
         onEntered: root.hovered = true
         onExited: root.hovered = false
         onClicked: root.opened()
+
+        ToolTip.visible: containsMouse
+        ToolTip.delay: 700
+        ToolTip.text: "View files from this import"
     }
 
     ColumnLayout {
@@ -136,6 +142,10 @@ Rectangle {
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: root.clearRequested()
+
+                    ToolTip.visible: containsMouse
+                    ToolTip.delay: 500
+                    ToolTip.text: "Remove this entry from history"
                 }
             }
         }
@@ -208,6 +218,10 @@ Rectangle {
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: root.ejectRequested()
+
+                    ToolTip.visible: containsMouse
+                    ToolTip.delay: 500
+                    ToolTip.text: "Safely eject this device"
                 }
             }
 

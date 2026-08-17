@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import PhotoImport
+import PhotoSpool
 import "../components"
 
 Item {
@@ -22,7 +22,7 @@ Item {
                 color: Theme.textPrimary
                 Layout.fillWidth: true
             }
-            HeaderButton { label: "Mark all read"; onClicked: appController.markAllNotificationsRead() }
+            HeaderButton { label: "Mark all read"; tooltip: "Mark every notification as read"; onClicked: appController.markAllNotificationsRead() }
         }
 
         ListView {
@@ -80,6 +80,10 @@ Item {
                         appController.markNotificationRead(model.notificationId)
                         if (targetSessionId >= 0) root.sessionSelected(targetSessionId)
                     }
+
+                    ToolTip.visible: containsMouse
+                    ToolTip.delay: 600
+                    ToolTip.text: (model.read ? "Read" : "Unread") + (model.sessionId >= 0 ? " — click to view that import" : " — click to mark as read")
                 }
             }
 
@@ -95,6 +99,7 @@ Item {
         HeaderButton {
             label: "Clear all"
             Layout.alignment: Qt.AlignRight
+            tooltip: "Delete all notifications"
             onClicked: appController.clearNotifications()
         }
     }

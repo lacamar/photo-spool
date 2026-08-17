@@ -4,7 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A personal, local-only Wayland desktop app (PySide6/QML, niri compositor) that replaces Lightroom's import
+**Photo Spool** (package/service/module name: `photo-spool`; formerly `photo-import`, renamed 0.3.0) is a
+personal, local-only Wayland desktop app (PySide6/QML, niri compositor) that replaces Lightroom's import
 step: watches for an SD card, a camera (mass storage or MTP), or an iPhone (AFC), and imports new raw
 photos — converting to lossless-compressed DNG via a self-managed `dnglab` binary and filing them into
 `~/Pictures/YYYY/YYYY-MM/YYYY-MM-DD/YYYY.MM.DD_Model_NNNNN.dng`. Sibling project to `social-crm`; shares its
@@ -16,7 +17,7 @@ conventions).
 ```bash
 just run          # python3 main.py
 just demo         # python3 main.py --demo   (seeds demo session history if the DB is empty)
-just clean-db     # wipe the local sqlite DB ($XDG_DATA_HOME/photo-import/data.db)
+just clean-db     # wipe the local sqlite DB ($XDG_DATA_HOME/photo-spool/data.db)
 just test         # python3 -m unittest discover -s tests -v
 ./run.sh          # equivalent to `just run`, usable outside the repo root
 ```
@@ -31,7 +32,7 @@ at module-import time (before any test's isolation took effect) instead of fresh
 `tests/test_settings_store.py`'s regression coverage for that exact bug and `settings_store._default_for`
 for the fix. Never write a test that calls `paths`/`settings_store`/`db` functions before
 `IsolatedTestCase.setUp()` has run. `no automated test suite` used to be true here; it no longer is, and
-`packaging/photo-import.spec`'s `%check` now runs this suite as part of every RPM build — a failing test
+`packaging/photo-spool.spec`'s `%check` now runs this suite as part of every RPM build — a failing test
 fails the build, same as the existing `desktop-file-validate`/syntax checks there.
 
 **Never write a test that imports `backend.app_controller` or `backend.device_watch`** — both touch the
@@ -49,19 +50,25 @@ python3 -c "import ast; ast.parse(open('backend/whatever.py').read())"
 
 ```bash
 ./packaging/build-rpm.sh          # builds via mx-rpm (mock-based), not plain rpmbuild
-sudo dnf install -y ~/.local/rpm/rpms/photo-import/photo-import-<version>-1.fc45.noarch.rpm
+sudo dnf install -y ~/.local/rpm/rpms/photo-spool/photo-spool-<version>-1.fc45.noarch.rpm
 ```
 
-`packaging/photo-import.spec` is the in-repo canonical spec; `build-rpm.sh` symlinks it into
-`~/.local/rpm/specs/photo-import.spec` and stages the source tarball (via `git archive`, tracked files
-only) under `~/.local/rpm/specs/photo-import/`, matching this machine's convention for other RPM-packaged
+`packaging/photo-spool.spec` is the in-repo canonical spec; `build-rpm.sh` symlinks it into
+`~/.local/rpm/specs/photo-spool.spec` and stages the source tarball (via `git archive`, tracked files
+only) under `~/.local/rpm/specs/photo-spool/`, matching this machine's convention for other RPM-packaged
 projects. **Versioning convention: bump `Version:` + add a `%changelog` entry in the spec, and create a
 matching annotated git tag (`git tag -a vX.Y.Z`), for every meaningful round of changes** — don't skip this
 even for small fixes.
 
+The package was renamed from `photo-import` to `photo-spool` at 0.3.0 (spec `Provides`/`Obsoletes` handle the
+`dnf` upgrade path; `backend/paths.py`'s `_migrate_data_home` moves the old `$XDG_DATA_HOME/photo-import`
+directory in place on first run under the new name). A system that already had the old service enabled needs
+one manual `systemctl --user enable --now photo-spool.service` after upgrading — the new package name means
+`%post`'s "only auto-enable on first install" logic doesn't carry the old unit's enabled state forward.
+
 `sudo dnf install` on this machine goes through a graphical `pkexec`/polkit prompt, not a terminal password
 prompt — if a backgrounded install command hangs with no output, it's very likely stuck waiting on that
-dialog, not actually failing. Check `rpm -q photo-import` (not just the shell exit code — a command piped
+dialog, not actually failing. Check `rpm -q photo-spool` (not just the shell exit code — a command piped
 through anything like `| tail` reports the pipe's exit code, not `dnf`'s) to confirm whether it actually
 went through.
 

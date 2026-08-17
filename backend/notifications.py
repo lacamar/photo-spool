@@ -76,7 +76,7 @@ class NotificationManager(QObject):
             actions = ["open", "Open"] if session_id is not None else []
             hints = {"transient": dbus.Boolean(True, variant_level=1)} if transient else {}
             notif_id = int(iface.Notify(
-                "Photo Import", dbus.UInt32(0), "", summary, body, actions, hints, -1,
+                "Photo Spool", dbus.UInt32(0), "", summary, body, actions, hints, -1,
             ))
         except Exception:
             logger.warning("Failed to send desktop notification", exc_info=True)

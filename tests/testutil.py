@@ -24,7 +24,7 @@ class IsolatedTestCase(unittest.TestCase):
 
     def setUp(self) -> None:
         super().setUp()
-        self.tmp = Path(tempfile.mkdtemp(prefix="photo-import-test-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="photo-spool-test-"))
         self._old_env = {var: os.environ.get(var) for var in _XDG_VARS}
         os.environ["XDG_DATA_HOME"] = str(self.tmp / "data")
         os.environ["XDG_CACHE_HOME"] = str(self.tmp / "cache")

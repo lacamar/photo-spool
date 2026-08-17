@@ -1,5 +1,5 @@
 import QtQuick
-import PhotoImport
+import PhotoSpool
 
 Item {
     id: root

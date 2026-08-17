@@ -1,10 +1,12 @@
 import QtQuick
-import PhotoImport
+import QtQuick.Controls
+import PhotoSpool
 
 Rectangle {
     id: root
     property string icon: ""
     property int badgeCount: 0
+    property string tooltip: ""
     signal clicked()
 
     implicitWidth: 34
@@ -56,4 +58,8 @@ Rectangle {
         cursorShape: Qt.PointingHandCursor
         onClicked: root.clicked()
     }
+
+    ToolTip.visible: root.tooltip.length > 0 && mouseArea.containsMouse
+    ToolTip.delay: 500
+    ToolTip.text: root.tooltip
 }

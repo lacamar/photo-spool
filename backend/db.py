@@ -150,6 +150,19 @@ def connect() -> sqlite3.Connection:
     conn = sqlite3.connect(str(paths.db_path()))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    # Default (rollback-journal, synchronous=FULL) pays two-plus fsyncs per
+    # commit -- and import_worker._record_file commits once per *file*
+    # during the checking phase, including every quick-match duplicate hit
+    # that did no hashing at all. On a re-scan of a mostly-already-imported
+    # card that's hundreds of pure-fsync commits back to back, easily
+    # dwarfing the actual dedup work and making "checking" look hung for
+    # files that were never even read. WAL + synchronous=NORMAL (SQLite's
+    # own recommended pairing) folds those into periodic checkpoint syncs
+    # instead of one per commit; this is a single-user local desktop DB, so
+    # the only durability cost is the (rare, OS-crash/power-loss-only,
+    # re-scan-recoverable) chance of losing the last few ledger writes.
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA synchronous = NORMAL")
     migrate(conn)
     return conn
 

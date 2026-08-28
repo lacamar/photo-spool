@@ -1,5 +1,5 @@
 Name:           photo-spool
-Version:        0.3.1
+Version:        0.3.2
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -173,6 +173,16 @@ done
 %{_userunitdir}/%{name}.service
 
 %changelog
+* Fri Aug 28 2026 Photo Spool <noreply@example.com> - 0.3.2-1
+- Switched the local sqlite DB to WAL journal mode with synchronous=NORMAL
+  (backend/db.py). The default rollback-journal mode paid two-plus fsyncs
+  per commit, and ImportWorker._record_file commits once per file during
+  the checking phase -- including every quick-match duplicate hit that
+  never got hashed at all. Re-scanning a mostly-already-imported card was
+  paying hundreds of pure-fsync round trips for files that were never even
+  read, making the checking phase look hung well beyond the actual
+  card-throughput-bound dedup work.
+
 * Mon Aug 17 2026 Photo Spool <noreply@example.com> - 0.3.1-1
 - Session detail view ("view files from this import") no longer lists
   files with "duplicate" status. Those rows are every already-imported

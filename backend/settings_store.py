@@ -25,6 +25,7 @@ DEFAULTS: dict[str, Any] = {
     "notify_on_complete": True,
     "dng_compression": "lossless",  # lossless | uncompressed
     "embed_raw_in_dng": False,  # off matches Lightroom's ~50% size reduction
+    "preview_size": "medium",  # small | medium | full -- see converter.PREVIEW_FLAGS
 }
 
 

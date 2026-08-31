@@ -1,5 +1,5 @@
 Name:           photo-spool
-Version:        0.3.3
+Version:        0.3.4
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -173,6 +173,19 @@ done
 %{_userunitdir}/%{name}.service
 
 %changelog
+* Mon Aug 31 2026 Photo Spool <noreply@example.com> - 0.3.4-1
+- New Settings > DNG conversion option, "Embedded preview size" (small /
+  medium / full size), controlling the preview/thumbnail image embedded in
+  each converted DNG -- not raw image quality, which is unaffected. Maps
+  onto exactly what dnglab's convert command supports: small is thumbnail-
+  only (--dng-preview false), medium is today's default (the camera's own
+  embedded preview), and full size renders the preview from the full raw
+  sensor data via the --full-size-preview flag added by this machine's
+  patched dnglab package (not upstream, see
+  ~/.local/src/arm64-misc/specfiles/dnglab). No separate "large" tier --
+  dnglab has no continuous preview-resolution control, only that binary
+  preview-source switch plus the thumbnail on/off toggle.
+
 * Sun Aug 30 2026 Photo Spool <noreply@example.com> - 0.3.3-1
 - Switched from a self-downloaded dnglab binary to the system-packaged
   dnglab (new Requires: dnglab, built from a separate spec that also adds

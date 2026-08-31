@@ -26,6 +26,7 @@ Item {
         notifyToggle.checked = appController.getSetting("notify_on_complete")
         embedRawToggle.checked = appController.getSetting("embed_raw_in_dng")
         compressionGroup.select(appController.getSetting("dng_compression"))
+        previewSizeGroup.select(appController.getSetting("preview_size"))
     }
 
     ScrollView {
@@ -222,6 +223,37 @@ Item {
                 }
                 Text {
                     text: "Off keeps DNGs roughly half the size of the original raw file (matches Lightroom's default). On preserves the exact original raw bytes inside the DNG, at close to full size."
+                    color: Theme.textSecondary
+                    font.pixelSize: 11
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
+                }
+
+                Text { text: "Embedded preview size"; color: Theme.textPrimary; font.pixelSize: 13 }
+                RowLayout {
+                    spacing: 8
+                    id: previewSizeGroup
+                    property string selected: "medium"
+                    function select(size) {
+                        selected = size
+                        appController.setSetting("preview_size", size)
+                    }
+                    Repeater {
+                        model: [
+                            { key: "small", label: "Small", tip: "Thumbnail only -- smallest DNGs, fastest to convert" },
+                            { key: "medium", label: "Medium", tip: "The camera's own embedded preview (default)" },
+                            { key: "full", label: "Full size", tip: "Render the preview from the full raw data instead of the camera's smaller embedded one -- slower to convert" }
+                        ]
+                        delegate: HeaderButton {
+                            label: modelData.label
+                            prominent: previewSizeGroup.selected === modelData.key
+                            tooltip: modelData.tip
+                            onClicked: previewSizeGroup.select(modelData.key)
+                        }
+                    }
+                }
+                Text {
+                    text: "Controls the preview/thumbnail image embedded in each DNG (what photo editors show before decoding the raw data) -- not the raw image quality itself, which is unaffected."
                     color: Theme.textSecondary
                     font.pixelSize: 11
                     wrapMode: Text.WordWrap

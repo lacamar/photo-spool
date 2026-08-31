@@ -316,6 +316,7 @@ class ImportWorker(QThread):
 
         compression = settings.get("dng_compression", "lossless")
         embed_raw = bool(settings.get("embed_raw_in_dng", False))
+        preview_size = settings.get("preview_size", "medium")
         convert_done = 0
         total_to_place = len(to_convert) + len(to_copy)
 
@@ -332,7 +333,8 @@ class ImportWorker(QThread):
             self.sessionProgress.emit(session_id, PHASE_CONVERTING, 0, len(to_convert), "")
             try:
                 _returncode, tail = converter.convert_batch(
-                    dnglab_path, staging_in, staging_out, compression, embed_raw, on_progress=on_converted,
+                    dnglab_path, staging_in, staging_out, compression, embed_raw, preview_size,
+                    on_progress=on_converted,
                 )
             except OSError as exc:
                 for source_hash, cand, order in to_convert:

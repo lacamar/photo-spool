@@ -28,8 +28,21 @@ DNG_BACKWARD_VERSION = "1.4.0.0"
 _UNSAFE_CHARS_RE = re.compile(r"[^A-Za-z0-9._+-]")
 _CONVERTED_RE = re.compile(r"Status: Converted '([^']+)' =>")
 
+# dnglab has no continuous preview-resolution control -- only a thumbnail
+# on/off switch and a binary preview *source* (camera's own embedded
+# preview, or one rendered from the full raw sensor data via the
+# --full-size-preview patch, see ~/.local/src/arm64-misc/specfiles/dnglab).
+# "small"/"medium"/"full" map onto exactly what that gives us; there's no
+# real intermediate size to call "large".
+PREVIEW_FLAGS: dict[str, dict[str, str]] = {
+    "small": {"dng-preview": "false", "dng-thumbnail": "true", "full-size-preview": "false"},
+    "medium": {"dng-preview": "true", "dng-thumbnail": "true", "full-size-preview": "false"},
+    "full": {"dng-preview": "true", "dng-thumbnail": "true", "full-size-preview": "true"},
+}
+
 
 def convert_batch(dnglab_path: Path, staging_in: Path, staging_out: Path, compression: str, embed_raw: bool,
+                   preview_size: str = "medium",
                    on_progress: Callable[[str], None] | None = None) -> tuple[int, str]:
     """Runs dnglab over the whole staged batch, streaming its `-v` per-file
     output so `on_progress(source_stem)` can be called as each file
@@ -40,11 +53,15 @@ def convert_batch(dnglab_path: Path, staging_in: Path, staging_out: Path, compre
     for error reporting -- never raises on a timeout, just kills and
     reports it like any other failure."""
     staging_out.mkdir(parents=True, exist_ok=True)
+    preview_flags = PREVIEW_FLAGS[preview_size]
     proc = subprocess.Popen(
         [
             str(dnglab_path), "convert",
             "-c", compression,
             "--embed-raw", "true" if embed_raw else "false",
+            "--dng-preview", preview_flags["dng-preview"],
+            "--dng-thumbnail", preview_flags["dng-thumbnail"],
+            "--full-size-preview", preview_flags["full-size-preview"],
             "--keep-mtime", "true",
             "-r", "-f", "-v",
             str(staging_in), str(staging_out),

@@ -19,7 +19,7 @@ if QCoreApplication.instance() is None:
     _app = QCoreApplication([])
 
 
-def _fake_convert_batch(dnglab_path, staging_in, staging_out, compression, embed_raw, on_progress=None):
+def _fake_convert_batch(dnglab_path, staging_in, staging_out, compression, embed_raw, preview_size="medium", on_progress=None):
     """Stands in for a real dnglab invocation: copies each staged input
     straight to <hash>.dng in staging_out, so the rest of the pipeline
     (matching, placement, DNGBackwardVersion) can be exercised without a
@@ -136,9 +136,9 @@ class ConversionRoutingTests(ImportWorkerTestCase):
         (self.source_root / "clip.mov").write_bytes(b"fake video bytes" * 10000)
         seen_in_staging_in = []
 
-        def spy_convert_batch(dnglab_path, staging_in, staging_out, compression, embed_raw, on_progress=None):
+        def spy_convert_batch(dnglab_path, staging_in, staging_out, compression, embed_raw, preview_size="medium", on_progress=None):
             seen_in_staging_in.extend(p.name for p in staging_in.iterdir())
-            return _fake_convert_batch(dnglab_path, staging_in, staging_out, compression, embed_raw, on_progress)
+            return _fake_convert_batch(dnglab_path, staging_in, staging_out, compression, embed_raw, preview_size, on_progress)
 
         request = ImportRequest(source_root=str(self.source_root), device_label="Test", kind="blockdev")
         with mock.patch("backend.import_worker.converter.convert_batch", side_effect=spy_convert_batch), \
@@ -251,9 +251,9 @@ class IntraBatchDuplicateContentTests(ImportWorkerTestCase):
         (self.source_root / "DSC00002.ARW").write_bytes(content)
         convert_calls = []
 
-        def spy_convert_batch(dnglab_path, staging_in, staging_out, compression, embed_raw, on_progress=None):
+        def spy_convert_batch(dnglab_path, staging_in, staging_out, compression, embed_raw, preview_size="medium", on_progress=None):
             convert_calls.append([p.name for p in staging_in.iterdir()])
-            return _fake_convert_batch(dnglab_path, staging_in, staging_out, compression, embed_raw, on_progress)
+            return _fake_convert_batch(dnglab_path, staging_in, staging_out, compression, embed_raw, preview_size, on_progress)
 
         request = ImportRequest(source_root=str(self.source_root), device_label="Test", kind="blockdev")
         with mock.patch("backend.import_worker.converter.convert_batch", side_effect=spy_convert_batch), \

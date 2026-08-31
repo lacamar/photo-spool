@@ -1,11 +1,11 @@
 Name:           photo-spool
-Version:        0.3.2
+Version:        0.3.3
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
 # Personal/local tool; MIT is just a permissive default -- change freely.
 License:        MIT
-URL:            https://github.com/example/photo-spool
+URL:            https://github.com/lacamar/photo-spool
 Source0:        %{name}-%{version}.tar.gz
 
 BuildArch:      noarch
@@ -38,6 +38,7 @@ Requires:       python3-pyside6
 Requires:       python3-dbus
 Requires:       glib2
 Requires:       udisks2
+Requires:       dnglab
 Requires:       perl-Image-ExifTool
 Requires:       ffmpeg-free
 Requires:       xdg-utils
@@ -70,8 +71,8 @@ Recommends:     python3-pywayland
 A personal, local-only Wayland desktop app that watches for an SD card, a
 camera (mass storage or MTP), or an iPhone (AFC) being connected, and
 imports new raw photos: ARW/CR2/CR3/NEF/RAF/RW2/ORF/PEF are converted to
-lossless-compressed DNG (via a self-managed dnglab binary, downloaded on
-first use -- no Adobe DNG Converter needed on Linux); files already in DNG
+lossless-compressed DNG (via the system-packaged dnglab, pulled in as a
+dependency -- no Adobe DNG Converter needed on Linux); files already in DNG
 form (e.g. iPhone ProRAW) are copied straight through. Video files
 (MP4/MOV/M4V/MTS/M2TS/AVI) are filed alongside the stills too, untouched
 -- just renamed into place, no conversion. Everything is filed into the
@@ -84,8 +85,7 @@ with already-imported shots greyed out (or markable as already-imported
 without re-processing them) and everything else preselected. Content-hash
 deduplication means re-scanning a card that still has old photos on it
 never re-imports anything. Native desktop notifications, XDG-portal-aware
-light/dark theming, no telemetry, no network access beyond the one-time
-dnglab download.
+light/dark theming, no telemetry, no network access.
 
 %prep
 %autosetup -n %{name}-%{version}
@@ -173,6 +173,15 @@ done
 %{_userunitdir}/%{name}.service
 
 %changelog
+* Sun Aug 30 2026 Photo Spool <noreply@example.com> - 0.3.3-1
+- Switched from a self-downloaded dnglab binary to the system-packaged
+  dnglab (new Requires: dnglab, built from a separate spec that also adds
+  a --full-size-preview convert flag not upstream). backend/dnglab_setup.py
+  now just does a synchronous shutil.which("dnglab") PATH lookup -- no more
+  network download, no EnsureWorker background thread, no dnglab_path
+  setting. "Retry" in Settings (now "Check again") re-checks PATH instead
+  of re-downloading, for after the package is installed by hand.
+
 * Fri Aug 28 2026 Photo Spool <noreply@example.com> - 0.3.2-1
 - Switched the local sqlite DB to WAL journal mode with synchronous=NORMAL
   (backend/db.py). The default rollback-journal mode paid two-plus fsyncs

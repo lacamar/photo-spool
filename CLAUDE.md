@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Photo Spool** (package/service/module name: `photo-spool`; formerly `photo-import`, renamed 0.3.0) is a
 personal, local-only Wayland desktop app (PySide6/QML, niri compositor) that replaces Lightroom's import
 step: watches for an SD card, a camera (mass storage or MTP), or an iPhone (AFC), and imports new raw
-photos — converting to lossless-compressed DNG via a self-managed `dnglab` binary and filing them into
+photos — converting to lossless-compressed DNG via the system-packaged `dnglab` binary and filing them into
 `~/Pictures/YYYY/YYYY-MM/YYYY-MM-DD/YYYY.MM.DD_Model_NNNNN.dng`. Sibling project to `social-crm`; shares its
 toolkit and QML visual style (`Theme.qml` and the `qml/components/` building blocks follow the same
 conventions).
@@ -55,8 +55,9 @@ sudo dnf install -y ~/.local/rpm/rpms/photo-spool/photo-spool-<version>-1.fc45.n
 
 `packaging/photo-spool.spec` is the in-repo canonical spec; `build-rpm.sh` symlinks it into
 `~/.local/rpm/specs/photo-spool.spec` and stages the source tarball (via `git archive`, tracked files
-only) under `~/.local/rpm/specs/photo-spool/`, matching this machine's convention for other RPM-packaged
-projects. **Versioning convention: bump `Version:` + add a `%changelog` entry in the spec, and create a
+only) under `~/.local/rpm/sources/photo-spool/` -- mx-rpm's own default source-root resolution, no
+`--sourceroot` override -- matching this machine's convention for other RPM-packaged projects.
+**Versioning convention: bump `Version:` + add a `%changelog` entry in the spec, and create a
 matching annotated git tag (`git tag -a vX.Y.Z`), for every meaningful round of changes** — don't skip this
 even for small fixes.
 
@@ -96,7 +97,10 @@ subprocess calls:
   `InterfacesAdded` payload is a doubly-nested dict QtDBus doesn't reliably unmarshal); a `QTimer` on the
   GUI thread ticks every ~2.5s, calling one flat synchronous `GetManagedObjects` via `dbus-python` (not
   QtDBus). `poll_now()` gives the UI a manual-refresh hook.
-- **`dnglab_setup.EnsureWorker`** — one-shot resolve-or-download of the `dnglab` binary.
+- **`dnglab_setup`** — no worker thread here; `dnglab` is a system package (`Requires: dnglab` in the
+  photo-spool spec) so `dnglab_setup.find_existing()` is just a synchronous `shutil.which` lookup, cheap
+  enough to call straight from the GUI thread (at startup, and from `retryDnglabSetup()` after the user
+  installs the package).
 
 `AppController` (`app_controller.py`) is the single QObject facade exposed to QML as `appController`; it
 owns the GUI-thread DB connection, wires every worker's signals to the list models and to its own

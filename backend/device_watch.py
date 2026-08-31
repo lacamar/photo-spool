@@ -143,8 +143,7 @@ def _ensure_gvfs_fuse_running(gvfs_dir: Path) -> None:
     paths -- which is everything downstream of this module. gvfs-fuse
     ships only the binary (no unit, no autostart entry), so self-starting
     it here is the reliable fix rather than depending on the desktop
-    environment to have arranged it -- same philosophy as dnglab's
-    self-download in dnglab_setup.py."""
+    environment to have arranged it."""
     gvfs_dir.mkdir(parents=True, exist_ok=True)
     if _gvfs_fuse_mounted(gvfs_dir):
         return

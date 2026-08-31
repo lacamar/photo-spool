@@ -1,5 +1,5 @@
-"""XDG path resolution for the app's data directory, DB file, downloaded
-dnglab binary, and import staging area."""
+"""XDG path resolution for the app's data directory, DB file, and import
+staging area."""
 from __future__ import annotations
 
 import os
@@ -39,10 +39,6 @@ def db_path() -> Path:
     return data_home() / "data.db"
 
 
-def bin_dir() -> Path:
-    return data_home() / "bin"
-
-
 def staging_dir() -> Path:
     """Scratch area for locally-staged copies of source files (staged
     while hashing them, so a slow source only needs one read -- see
@@ -61,9 +57,9 @@ def default_library_root() -> Path:
 
 
 def _migrate_data_home() -> None:
-    """One-time move of the pre-rename data directory (DB, settings, the
-    self-downloaded dnglab binary) from ~/.local/share/photo-import to
-    ~/.local/share/photo-spool, so the app-name rename doesn't silently
+    """One-time move of the pre-rename data directory (DB, settings) from
+    ~/.local/share/photo-import to ~/.local/share/photo-spool, so the
+    app-name rename doesn't silently
     orphan real session history behind a path nothing reads anymore. Only
     acts when the new dir doesn't exist yet and the old one does -- once
     migrated (or on a fresh install with no old dir), this is a no-op
@@ -87,4 +83,3 @@ def _migrate_data_home() -> None:
 def ensure_dirs() -> None:
     _migrate_data_home()
     data_home().mkdir(parents=True, exist_ok=True)
-    bin_dir().mkdir(parents=True, exist_ok=True)

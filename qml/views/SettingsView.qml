@@ -168,15 +168,15 @@ Item {
                 RowLayout {
                     Layout.fillWidth: true
                     Text {
-                        text: appController.dnglabReady ? "Converter ready" : "Converter not installed yet"
+                        text: appController.dnglabReady ? "Converter ready" : "dnglab isn't installed -- install the dnglab package"
                         color: appController.dnglabReady ? Theme.healthFresh : Theme.textSecondary
                         font.pixelSize: 13
                         Layout.fillWidth: true
                     }
                     HeaderButton {
                         visible: !appController.dnglabReady
-                        label: "Retry download"
-                        tooltip: "Try downloading the dnglab converter again"
+                        label: "Check again"
+                        tooltip: "Check again after installing the dnglab package"
                         onClicked: appController.retryDnglabSetup()
                     }
                 }

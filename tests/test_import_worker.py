@@ -47,9 +47,9 @@ class ImportWorkerTestCase(IsolatedTestCase):
 
     def _run(self, **kwargs) -> int:
         request = ImportRequest(source_root=str(self.source_root), device_label="Test", kind="blockdev", **kwargs)
-        # dnglab_setup.ensure() falls back to a real network download if no
-        # binary is already resolvable -- never let a test touch the
-        # network, regardless of what's installed on the machine running it.
+        # dnglab_setup.ensure() does a real PATH lookup -- mock it so tests
+        # don't depend on whether dnglab is actually installed on the
+        # machine running them.
         with mock.patch("backend.import_worker.converter.convert_batch", side_effect=_fake_convert_batch), \
              mock.patch("backend.import_worker.dnglab_setup.ensure", return_value=Path("/fake/dnglab")):
             self.worker._run_session(self.conn, request)

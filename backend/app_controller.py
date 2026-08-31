@@ -92,9 +92,6 @@ class AppController(QObject):
         self._inhibitor = inhibit.ImportInhibitor()
 
         self._dnglab_ready = dnglab_setup.find_existing() is not None
-        self._dnglab_worker: dnglab_setup.EnsureWorker | None = None
-        if not self._dnglab_ready:
-            self._start_dnglab_setup()
 
         self._import_worker = ImportWorker(self)
         self._import_worker.sessionStarted.connect(self._on_session_started)
@@ -288,7 +285,7 @@ class AppController(QObject):
         self.unreadNotificationCountChanged.emit()
 
     def _on_dnglab_unavailable(self, session_id: int) -> None:
-        self.toast.emit("The DNG converter isn't available -- check your network connection.")
+        self.toast.emit("The DNG converter (dnglab) isn't installed -- install the dnglab package.")
 
     @Slot(int, result='QVariantList')
     def getSessionFiles(self, session_id: int) -> list[dict]:
@@ -626,22 +623,10 @@ class AppController(QObject):
 
     # --- dnglab setup ------------------------------------------------------------------
 
-    def _start_dnglab_setup(self) -> None:
-        if self._dnglab_worker is not None and self._dnglab_worker.isRunning():
-            return
-        self._dnglab_worker = dnglab_setup.EnsureWorker(self)
-        self._dnglab_worker.finishedOk.connect(self._on_dnglab_setup_done)
-        self._dnglab_worker.start()
-
-    def _on_dnglab_setup_done(self, ok: bool, path: str) -> None:
-        self._dnglab_ready = ok
-        if ok:
-            settings_store.set(self._conn, "dnglab_path", path)
-        self.dnglabReadyChanged.emit()
-
     @Slot()
     def retryDnglabSetup(self) -> None:
-        self._start_dnglab_setup()
+        self._dnglab_ready = dnglab_setup.find_existing() is not None
+        self.dnglabReadyChanged.emit()
 
     def _dnglab_ready_get(self) -> bool:
         return self._dnglab_ready

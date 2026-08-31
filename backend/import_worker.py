@@ -169,8 +169,8 @@ class ImportWorker(QThread):
             if dnglab_path is None:
                 self._finish_session(
                     conn, session_id, "failed",
-                    error_message="The DNG converter (dnglab) isn't available -- check your network "
-                                   "connection, then retry from Settings.",
+                    error_message="The DNG converter (dnglab) isn't installed -- install the dnglab "
+                                   "package, then retry from Settings.",
                 )
                 self.dnglabUnavailable.emit(session_id)
                 return

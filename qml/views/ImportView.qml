@@ -79,7 +79,7 @@ Item {
 
                     Text {
                         visible: !appController.dnglabReady
-                        text: "Setting up DNG converter…"
+                        text: "DNG converter not installed -- see Settings"
                         color: Theme.textSecondary
                         font.pixelSize: 11
                     }

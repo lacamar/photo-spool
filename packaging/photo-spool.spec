@@ -1,5 +1,5 @@
 Name:           photo-spool
-Version:        0.4.0
+Version:        0.4.1
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -173,6 +173,10 @@ done
 %{_userunitdir}/%{name}.service
 
 %changelog
+* Sun Sep 20 2026 Photo Spool <noreply@example.com> - 0.4.1-1
+- Restore backend __version__ (0.4.0 failed to start)
+- Test version matches spec
+
 * Sun Sep 20 2026 Photo Spool <noreply@example.com> - 0.4.0-1
 - Replace emoji icons with SVG glyphs
 - Remove in-app notification history

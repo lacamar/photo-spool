@@ -42,13 +42,3 @@ class SessionFile:
     dest_path: str
     error_message: str
     sort_order: int
-
-
-@dataclass
-class Notification:
-    id: int
-    created_at: str
-    text: str
-    session_id: int | None
-    kind: str
-    read: bool

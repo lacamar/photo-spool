@@ -1,5 +1,4 @@
-"""Desktop notifications via org.freedesktop.Notifications, plus the
-in-app notification-history table.
+"""Desktop notifications via org.freedesktop.Notifications.
 
 Sending uses `dbus` (dbus-python) rather than QtDBus: Notify()'s
 `replaces_id` parameter is strictly typed as D-Bus UINT32, and PySide6's
@@ -13,8 +12,6 @@ extra dependency.
 from __future__ import annotations
 
 import logging
-import sqlite3
-from datetime import datetime, timezone
 
 from PySide6.QtCore import QObject, SLOT, Signal, Slot
 from PySide6.QtDBus import QDBusConnection
@@ -64,10 +61,7 @@ class NotificationManager(QObject):
         failure (never raises -- notifications are an enhancement, not a
         dependency of core functionality). `transient=True` sets the
         freedesktop-spec "transient" hint, telling the notification daemon
-        itself not to keep this one in its own persistent history/history
-        panel -- skipping our own in-app history table (see
-        app_controller._on_source_found) has no effect on that, since it's
-        a separate store the daemon manages on its own."""
+        itself not to keep this one in its own persistent history panel."""
         if self._session_bus is None:
             return 0
         try:
@@ -96,30 +90,3 @@ class NotificationManager(QObject):
     @Slot('uint', 'uint')
     def _onNotificationClosed(self, notif_id, reason) -> None:
         self._session_by_notif_id.pop(int(notif_id), None)
-
-
-# --- in-app notification history -------------------------------------------------
-
-def record(conn: sqlite3.Connection, text: str, session_id: int | None, kind: str) -> int:
-    now = datetime.now(timezone.utc).isoformat()
-    with conn:
-        cur = conn.execute(
-            "INSERT INTO notifications (created_at, text, session_id, kind, read) VALUES (?, ?, ?, ?, 0)",
-            (now, text, session_id, kind),
-        )
-    return cur.lastrowid
-
-
-def mark_read(conn: sqlite3.Connection, notification_id: int) -> None:
-    with conn:
-        conn.execute("UPDATE notifications SET read = 1 WHERE id = ?", (notification_id,))
-
-
-def mark_all_read(conn: sqlite3.Connection) -> None:
-    with conn:
-        conn.execute("UPDATE notifications SET read = 1")
-
-
-def clear_all(conn: sqlite3.Connection) -> None:
-    with conn:
-        conn.execute("DELETE FROM notifications")

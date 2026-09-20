@@ -111,7 +111,6 @@ def main() -> int:
     context = engine.rootContext()
     context.setContextProperty("appController", controller)
     context.setContextProperty("sessionModel", controller.sessionModel)
-    context.setContextProperty("notificationModel", controller.notificationModel)
     context.setContextProperty("sourcesModel", controller.sourcesModel)
     # Read once by Main.qml's initial `visible:` binding -- must be set
     # before engine.load() below so the window is never shown for even a

@@ -142,6 +142,10 @@ MIGRATIONS: Sequence[Sequence[str]] = (
         )
         """,
     ),
+    # --- v4 -> v5: in-app notification history removed ---
+    (
+        "DROP TABLE notifications",
+    ),
 )
 
 

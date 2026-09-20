@@ -18,9 +18,36 @@ Item {
         }
     }
 
+    function etaLabel(seconds) {
+        if (seconds < 0) return ""
+        if (seconds < 60) return "~" + Math.max(5, Math.round(seconds / 5) * 5) + " s left"
+        return "~" + Math.round(seconds / 60) + " min left"
+    }
+
+    function dayLabel(day) {
+        var fmt = (d) => Qt.formatDate(d, "yyyy-MM-dd")
+        var today = new Date()
+        var yesterday = new Date()
+        yesterday.setDate(today.getDate() - 1)
+        if (day === fmt(today)) return "Today"
+        if (day === fmt(yesterday)) return "Yesterday"
+        return Qt.formatDate(new Date(day + "T00:00:00"), "d MMMM")
+    }
+
+    readonly property var phases: [
+        { key: "scanning", label: "Scan" },
+        { key: "checking", label: "Check" },
+        { key: "converting", label: "Convert" },
+        { key: "placing", label: "File" }
+    ]
+
     ColumnLayout {
-        anchors.fill: parent
-        anchors.margins: 22
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.topMargin: 22
+        anchors.bottomMargin: 22
+        width: Math.min(parent.width - 44, Theme.contentMaxWidth)
         spacing: 14
 
         Rectangle {
@@ -62,6 +89,11 @@ Item {
                                        + appController.activeLabel + ": "
                                        + root.phaseLabel(appController.activePhase, appController.activeDone,
                                                           appController.activeTotal)
+                                if (appController.activeTotal > 0 && appController.activePhase !== "scanning")
+                                    t += " · " + Math.floor(100 * appController.activeDone / appController.activeTotal) + "%"
+                                var eta = appController.importsPaused ? "" : root.etaLabel(appController.activeEtaSeconds)
+                                if (eta.length > 0)
+                                    t += " · " + eta
                                 if (appController.queuedCount > 0)
                                     t += " (+" + appController.queuedCount + " more queued)"
                                 return t
@@ -85,19 +117,19 @@ Item {
                     }
 
                     HeaderIconButton {
-                        icon: appController.importsPaused ? "▶" : "⏸"
+                        icon: appController.importsPaused ? "play" : "pause"
                         tooltip: appController.importsPaused ? "Resume imports" : "Pause imports"
                         onClicked: appController.setImportsPaused(!appController.importsPaused)
                     }
 
                     HeaderIconButton {
-                        icon: "⟳"
+                        icon: "refresh"
                         tooltip: "Refresh devices"
                         onClicked: appController.refreshDevices()
                     }
 
                     HeaderIconButton {
-                        icon: "🗑"
+                        icon: "trash"
                         visible: list.count > 0
                         tooltip: "Clear import history"
                         onClicked: appController.clearHistory()
@@ -122,13 +154,30 @@ Item {
                     }
                 }
 
-                Text {
-                    visible: appController.activeSessionId >= 0 && appController.activeFile.length > 0
-                    text: appController.activeFile
-                    color: Theme.textSecondary
-                    font.pixelSize: 11
-                    elide: Text.ElideMiddle
+                RowLayout {
                     Layout.fillWidth: true
+                    visible: appController.activeSessionId >= 0
+                    spacing: 6
+
+                    Text {
+                        text: appController.activeFile
+                        color: Theme.textSecondary
+                        font.pixelSize: 11
+                        elide: Text.ElideMiddle
+                        Layout.fillWidth: true
+                    }
+
+                    Repeater {
+                        model: root.phases
+                        Text {
+                            required property var modelData
+                            required property int index
+                            text: (index > 0 ? "›  " : "") + modelData.label
+                            color: modelData.key === appController.activePhase ? Theme.accent : Theme.textSecondary
+                            font.pixelSize: 11
+                            font.weight: modelData.key === appController.activePhase ? Font.DemiBold : Font.Normal
+                        }
+                    }
                 }
             }
         }
@@ -166,8 +215,20 @@ Item {
             Layout.fillHeight: !previewPanel.visible
             Layout.preferredHeight: previewPanel.visible ? 150 : -1
             clip: true
-            spacing: 10
+            spacing: 8
             model: sessionModel
+
+            section.property: "startedDay"
+            section.delegate: Text {
+                required property string section
+                text: root.dayLabel(section)
+                color: Theme.textSecondary
+                font.pixelSize: 11
+                font.weight: Font.DemiBold
+                topPadding: 8
+                bottomPadding: 6
+                leftPadding: 2
+            }
 
             add: Transition {
                 NumberAnimation { properties: "opacity"; from: 0; to: 1; duration: Theme.animMedium }
@@ -190,14 +251,10 @@ Item {
                 failedCount: model.failedCount
                 bytesSaved: model.bytesSaved
                 errorMessage: model.errorMessage
-                ejectable: model.kind !== "manual" && model.ejectablePath.length > 0
-                ejected: model.ejected
                 progressPhase: model.progressPhase
                 progressDone: model.progressDone
                 progressTotal: model.progressTotal
-                progressFile: model.progressFile
                 onOpened: root.sessionOpened(model.sessionId, model.deviceLabel)
-                onEjectRequested: appController.ejectSession(model.sessionId)
                 onClearRequested: appController.clearSession(model.sessionId)
             }
         }

@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import PhotoSpool
+import "../components"
 
 Item {
     id: root
@@ -39,10 +40,10 @@ Item {
                     color: Theme.textPrimary
                     Layout.fillWidth: true
                 }
-                Text {
-                    text: "↻"
+                Icon {
+                    name: "refresh"
                     color: Theme.accent
-                    font.pixelSize: 13
+                    size: 14
                     MouseArea {
                         anchors.fill: parent; anchors.margins: -6; cursorShape: Qt.PointingHandCursor
                         hoverEnabled: true

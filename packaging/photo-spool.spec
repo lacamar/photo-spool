@@ -1,5 +1,5 @@
 Name:           photo-spool
-Version:        0.3.4
+Version:        0.4.0
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -173,6 +173,16 @@ done
 %{_userunitdir}/%{name}.service
 
 %changelog
+* Sun Sep 20 2026 Photo Spool <noreply@example.com> - 0.4.0-1
+- Replace emoji icons with SVG glyphs
+- Remove in-app notification history
+- Status bar: percentage, ETA, phase steps
+- History: day sections, compact empty sessions
+- Eject moved to source cards
+- Hide sub-64 MB volumes, show filesystem label and camera model
+- Cap content width, larger card text
+- Fix shutdown AttributeError
+
 * Mon Aug 31 2026 Photo Spool <noreply@example.com> - 0.3.4-1
 - New Settings > DNG conversion option, "Embedded preview size" (small /
   medium / full size), controlling the preview/thumbnail image embedded in

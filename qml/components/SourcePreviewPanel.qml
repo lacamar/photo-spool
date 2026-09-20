@@ -224,7 +224,7 @@ Rectangle {
                     root.closeRequested()
                 }
             }
-            HeaderIconButton { icon: "✕"; tooltip: "Close preview"; onClicked: root.closeRequested() }
+            HeaderIconButton { icon: "close"; tooltip: "Close preview"; onClicked: root.closeRequested() }
         }
 
         Text {
@@ -383,13 +383,13 @@ Rectangle {
                         border.width: 1
                         border.color: "white"
 
-                        Text {
+                        Icon {
                             visible: !!root.selected[model.filename]
                             anchors.centerIn: parent
-                            text: "✓"
+                            name: "check"
                             color: "white"
-                            font.pixelSize: 12
-                            font.bold: true
+                            size: 13
+                            strokeWidth: 3
                         }
                     }
 

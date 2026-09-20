@@ -65,6 +65,8 @@ BLOCK_IFACE = "org.freedesktop.UDisks2.Block"
 DRIVE_IFACE = "org.freedesktop.UDisks2.Drive"
 
 DCIM_SEARCH_DEPTH = 2
+# Cameras in mass-storage mode expose tiny firmware/config partitions alongside the card
+MIN_VOLUME_BYTES = 64 * 1024 * 1024
 
 
 def _find_dcim(root: Path, depth: int = DCIM_SEARCH_DEPTH) -> bool:
@@ -291,6 +293,8 @@ class DeviceWatcher(QObject):
                 drive_label = str(drive_ifaces.get("Model", "") or "")
             if not removable:
                 continue
+            if 0 < int(block.get("Size", 0)) < MIN_VOLUME_BYTES:
+                continue
             current_keys.add(key)
 
             mount_points = [
@@ -299,6 +303,9 @@ class DeviceWatcher(QObject):
             ]
             root = mount_points[0] if mount_points else None
             label = drive_label or (Path(root).name if root else key.rsplit("/", 1)[-1]) or "Removable media"
+            fs_label = str(block.get("IdLabel", "") or "")
+            if fs_label and fs_label != label:
+                label = f"{label} · {fs_label}"
 
             existing = self._sources.get(key)
             if existing is None:

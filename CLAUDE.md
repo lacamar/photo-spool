@@ -156,7 +156,7 @@ after an import session finishes for that source.
 
 - `Theme.qml` is registered as a singleton (`qmlRegisterSingletonType`), not a context property.
 - Every other piece of backend state reaches QML as a context property set in `main.py`: `appController`
-  plus the three list models (`sessionModel`, `notificationModel`, `sourcesModel`).
+  plus the two list models (`sessionModel`, `sourcesModel`).
 - `backend/thumbnail_provider.py` serves `image://thumb/<url-encoded-path>` via a `QQuickImageProvider`
   registered with `engine.addImageProvider`.
 

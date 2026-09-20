@@ -139,10 +139,11 @@ Item {
                         color: revealMouse.containsMouse ? Theme.accentSoft : "transparent"
                         Behavior on color { ColorAnimation { duration: Theme.animFast } }
 
-                        Text {
+                        Icon {
                             anchors.centerIn: parent
-                            text: "📁"
-                            font.pixelSize: 12
+                            name: "folder"
+                            size: 13
+                            color: revealMouse.containsMouse ? Theme.accent : Theme.textSecondary
                         }
 
                         MouseArea {

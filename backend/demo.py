@@ -48,13 +48,3 @@ def seed_if_empty(conn: sqlite3.Connection) -> None:
                         "error_message, sort_order) VALUES (?, ?, ?, ?, ?, ?)",
                         (session_id, fname, fstatus, dest, err, i),
                     )
-            if status == "completed":
-                text = f"{label}: {imported} imported" + (f", {duplicate} already had copies" if duplicate else "")
-                kind_notif = "import_complete"
-            else:
-                text = f"{label}: import failed -- {error_message}"
-                kind_notif = "error"
-            conn.execute(
-                "INSERT INTO notifications (created_at, text, session_id, kind, read) VALUES (?, ?, ?, ?, ?)",
-                (finished.isoformat(), text, session_id, kind_notif, 1 if minutes_ago > 60 else 0),
-            )

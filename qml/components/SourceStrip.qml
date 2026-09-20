@@ -10,7 +10,7 @@ Item {
     property string expandedKey: ""
     signal sourceClicked(string key, string label)
 
-    implicitHeight: 144
+    implicitHeight: 104
 
     function kindLabel(kind) {
         switch (kind) {
@@ -24,11 +24,11 @@ Item {
 
     function kindIcon(kind) {
         switch (kind) {
-        case "blockdev": return "💾"
-        case "mtp": return "📷"
-        case "iphone": return "📱"
-        case "folder": return "📁"
-        default: return "🔌"
+        case "blockdev": return "sdcard"
+        case "mtp": return "camera"
+        case "iphone": return "phone"
+        case "folder": return "folder"
+        default: return "plug"
         }
     }
 
@@ -56,8 +56,8 @@ Item {
 
         delegate: Rectangle {
             id: tile
-            width: model.mounted ? 172 : 96
-            height: 144
+            width: model.mounted ? 196 : 104
+            height: root.implicitHeight
             radius: Theme.radiusMedium
             color: root.expandedKey === model.sourceKey
                    ? Theme.accentSoft
@@ -78,15 +78,16 @@ Item {
                 spacing: 3
                 visible: !model.mounted
 
-                Text {
-                    text: root.kindIcon(model.kind)
-                    font.pixelSize: 26
+                Icon {
+                    name: root.kindIcon(model.kind)
+                    size: 24
+                    color: Theme.textSecondary
                     Layout.alignment: Qt.AlignHCenter
                 }
                 Text {
                     text: "Tap to mount"
                     color: Theme.textSecondary
-                    font.pixelSize: 10
+                    font.pixelSize: 11
                     font.weight: Font.Medium
                     horizontalAlignment: Text.AlignHCenter
                     elide: Text.ElideRight
@@ -98,17 +99,7 @@ Item {
                 Text {
                     text: model.label
                     color: Theme.textSecondary
-                    font.pixelSize: 9
-                    horizontalAlignment: Text.AlignHCenter
-                    elide: Text.ElideRight
-                    maximumLineCount: 1
-                    Layout.fillWidth: true
-                    Layout.alignment: Qt.AlignHCenter
-                }
-                Text {
-                    text: root.kindLabel(model.kind)
-                    color: Theme.textSecondary
-                    font.pixelSize: 8
+                    font.pixelSize: 11
                     horizontalAlignment: Text.AlignHCenter
                     elide: Text.ElideRight
                     maximumLineCount: 1
@@ -123,32 +114,34 @@ Item {
             ColumnLayout {
                 anchors.fill: parent
                 anchors.margins: 10
-                spacing: 5
+                spacing: 3
                 visible: model.mounted
 
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: 6
 
-                    Text {
-                        text: root.kindIcon(model.kind)
-                        font.pixelSize: 18
+                    Icon {
+                        name: root.kindIcon(model.kind)
+                        size: 16
+                        color: Theme.textPrimary
                     }
                     Text {
                         text: model.label
                         color: Theme.textPrimary
-                        font.pixelSize: 12
+                        font.pixelSize: 13
                         font.weight: Font.DemiBold
                         elide: Text.ElideRight
                         Layout.fillWidth: true
+                        Layout.rightMargin: 16
                     }
                 }
 
                 Text {
                     Layout.fillWidth: true
-                    text: root.kindLabel(model.kind)
+                    text: model.cameraModel.length > 0 ? model.cameraModel : root.kindLabel(model.kind)
                     color: Theme.textSecondary
-                    font.pixelSize: 9
+                    font.pixelSize: 11
                     elide: Text.ElideRight
                 }
 
@@ -159,7 +152,7 @@ Item {
                           : model.newCount > 0 ? model.fileCount + " photo" + (model.fileCount === 1 ? "" : "s") + " · " + model.newCount + " new"
                           : model.fileCount + " photo" + (model.fileCount === 1 ? "" : "s") + " · all imported"
                     color: (model.statsLoaded && model.newCount > 0) ? Theme.accent : Theme.textSecondary
-                    font.pixelSize: 10
+                    font.pixelSize: 11
                     elide: Text.ElideRight
                 }
 
@@ -170,12 +163,12 @@ Item {
                     visible: model.statsLoaded && model.capacityBytes > 0
                     implicitHeight: 4
                     radius: 2
-                    color: Theme.chipBackground
+                    color: Theme.border
 
                     Rectangle {
                         height: parent.height
                         radius: parent.radius
-                        color: (model.usedBytes / Math.max(model.capacityBytes, 1)) > 0.9 ? Theme.danger : Theme.textSecondary
+                        color: (model.usedBytes / Math.max(model.capacityBytes, 1)) > 0.9 ? Theme.healthDue : Theme.textSecondary
                         width: parent.width * Math.min(1, model.usedBytes / Math.max(model.capacityBytes, 1))
                     }
                 }
@@ -184,7 +177,7 @@ Item {
                     visible: model.statsLoaded && model.capacityBytes > 0
                     text: root.formatBytes(model.freeBytes) + " free of " + root.formatBytes(model.capacityBytes)
                     color: Theme.textSecondary
-                    font.pixelSize: 8
+                    font.pixelSize: 11
                     elide: Text.ElideRight
                 }
             }
@@ -207,25 +200,27 @@ Item {
             // otherwise the whole-tile MouseArea above swallows every
             // click in this corner, including the remove button's own,
             // making it look clickable but do nothing.
-            Text {
-                visible: model.removable
-                text: "✕"
-                color: removeMouse.containsMouse ? Theme.danger : Theme.textSecondary
-                font.pixelSize: 11
+            Icon {
+                readonly property bool ejectable: !model.removable && model.mounted
+                visible: model.removable || (ejectable && (tileMouse.containsMouse || cornerMouse.containsMouse))
+                name: model.removable ? "close" : "eject"
+                size: 12
+                color: cornerMouse.containsMouse ? (model.removable ? Theme.danger : Theme.accent) : Theme.textSecondary
                 anchors.top: parent.top
                 anchors.right: parent.right
-                anchors.margins: 4
+                anchors.margins: 8
                 MouseArea {
-                    id: removeMouse
+                    id: cornerMouse
                     anchors.fill: parent
                     anchors.margins: -6
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: appController.removeFolder(model.sourceKey)
+                    onClicked: model.removable ? appController.removeFolder(model.sourceKey)
+                                               : appController.ejectSource(model.sourceKey)
 
                     ToolTip.visible: containsMouse
                     ToolTip.delay: 500
-                    ToolTip.text: "Stop watching this folder"
+                    ToolTip.text: model.removable ? "Stop watching this folder" : "Safely eject this device"
                 }
             }
         }
@@ -236,13 +231,13 @@ Item {
         // all. Wrapped in a plain Item so the gap is explicit (x offset)
         // rather than relying on that.
         footer: Item {
-            width: 84 + 10
-            height: 144
+            width: 40 + 10
+            height: root.implicitHeight
 
             Rectangle {
                 x: 10
-                width: 84
-                height: 144
+                width: 40
+                height: parent.height
                 radius: Theme.radiusMedium
                 color: addMouse.containsMouse ? Theme.chipBackground : "transparent"
                 border.width: 1
@@ -250,11 +245,11 @@ Item {
 
                 Behavior on color { ColorAnimation { duration: Theme.animFast } }
 
-                Text {
+                Icon {
                     anchors.centerIn: parent
-                    text: "+ Folder"
+                    name: "plus"
+                    size: 16
                     color: Theme.textSecondary
-                    font.pixelSize: 12
                 }
 
                 MouseArea {

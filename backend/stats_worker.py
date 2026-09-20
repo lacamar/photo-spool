@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import shutil
+from collections import Counter
 from pathlib import Path
 
 from PySide6.QtCore import QMutex, QThread, QWaitCondition, Signal
@@ -74,6 +75,7 @@ class SourceStatsWorker(QThread):
 
         file_count = new_count = 0
         content_bytes = 0
+        models: Counter[str] = Counter()
         root = Path(root_str)
         if root.is_dir():
             files = scanner.find_importable_files(root)
@@ -84,6 +86,8 @@ class SourceStatsWorker(QThread):
                 if cand is None:
                     continue
                 content_bytes += cand.size_bytes
+                if cand.camera_model:
+                    models[cand.camera_model] += 1
                 if not scanner.quick_duplicate_check(conn, cand.camera_model, f.name, cand.size_bytes):
                     new_count += 1
 
@@ -91,6 +95,7 @@ class SourceStatsWorker(QThread):
             "fileCount": file_count,
             "newCount": new_count,
             "contentBytes": content_bytes,
+            "cameraModel": models.most_common(1)[0][0] if models else "",
             "capacityBytes": capacity_bytes,
             "usedBytes": used_bytes,
             "freeBytes": free_bytes,

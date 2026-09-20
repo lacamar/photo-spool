@@ -1,10 +1,11 @@
-"""List models exposed to QML: import-session history and notification
-history. Per-session file lists (shown in the session detail popup) are
+"""List models exposed to QML: import-session history and the source
+strip. Per-session file lists (shown in the session detail popup) are
 small and viewed on demand rather than kept live, so they're just a plain
 Slot returning QVariantList on AppController -- no model class needed."""
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime
 
 from PySide6.QtCore import QAbstractListModel, QByteArray, QModelIndex, Qt
 
@@ -13,11 +14,18 @@ from .models import SESSION_KIND_LABELS
 SESSION_ROLES = [
     "sessionId", "startedAt", "finishedAt", "deviceLabel", "sourceRoot", "kind", "kindLabel",
     "status", "foundCount", "importedCount", "duplicateCount", "failedCount", "bytesSaved",
-    "errorMessage", "ejectablePath", "ejected",
+    "errorMessage", "startedDay",
     "progressPhase", "progressDone", "progressTotal", "progressFile",
 ]
 _SESSION_BASE = Qt.UserRole + 1
 SESSION_ROLE_MAP = {n: _SESSION_BASE + i for i, n in enumerate(SESSION_ROLES)}
+
+
+def _local_day(iso: str) -> str:
+    try:
+        return datetime.fromisoformat(iso).astimezone().date().isoformat()
+    except ValueError:
+        return ""
 
 
 def _session_row_to_entry(row: sqlite3.Row) -> dict:
@@ -36,8 +44,7 @@ def _session_row_to_entry(row: sqlite3.Row) -> dict:
         "failedCount": row["failed_count"],
         "bytesSaved": row["bytes_saved"],
         "errorMessage": row["error_message"],
-        "ejectablePath": row["ejectable_path"],
-        "ejected": bool(row["ejected"]),
+        "startedDay": _local_day(row["started_at"]),
         "progressPhase": "",
         "progressDone": 0,
         "progressTotal": 0,
@@ -102,14 +109,6 @@ class SessionListModel(QAbstractListModel):
         idx = self.index(i, 0)
         self.dataChanged.emit(idx, idx)
 
-    def mark_ejected(self, session_id: int) -> None:
-        i = self.index_of(session_id)
-        if i < 0:
-            return
-        self._entries[i]["ejected"] = True
-        idx = self.index(i, 0)
-        self.dataChanged.emit(idx, idx)
-
     def remove(self, session_id: int) -> None:
         i = self.index_of(session_id)
         if i < 0:
@@ -152,14 +151,14 @@ class SessionListModel(QAbstractListModel):
 # Hit this for real in SourceStrip.qml; keep the role name collision-safe.
 SOURCE_ROLES = [
     "sourceKey", "label", "kind", "mounted", "rootPath", "removable",
-    "statsLoaded", "fileCount", "newCount", "contentBytes",
+    "statsLoaded", "fileCount", "newCount", "contentBytes", "cameraModel",
     "capacityBytes", "usedBytes", "freeBytes",
 ]
 _SOURCE_BASE = Qt.UserRole + 1
 SOURCE_ROLE_MAP = {n: _SOURCE_BASE + i for i, n in enumerate(SOURCE_ROLES)}
 
 _SOURCE_STATS_DEFAULTS = {
-    "statsLoaded": False, "fileCount": 0, "newCount": 0, "contentBytes": 0,
+    "statsLoaded": False, "fileCount": 0, "newCount": 0, "contentBytes": 0, "cameraModel": "",
     "capacityBytes": 0, "usedBytes": 0, "freeBytes": 0,
 }
 
@@ -250,47 +249,3 @@ class SourceListModel(QAbstractListModel):
 
     def roleNames(self) -> dict:
         return {r: QByteArray(n.encode()) for n, r in SOURCE_ROLE_MAP.items()}
-
-
-NOTIF_ROLES = ["notificationId", "createdAt", "text", "sessionId", "kind", "read"]
-_NOTIF_BASE = Qt.UserRole + 1
-NOTIF_ROLE_MAP = {n: _NOTIF_BASE + i for i, n in enumerate(NOTIF_ROLES)}
-
-
-class NotificationListModel(QAbstractListModel):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._entries: list[dict] = []
-
-    def load(self, conn: sqlite3.Connection) -> None:
-        self.beginResetModel()
-        self._entries = [
-            {
-                "notificationId": row["id"],
-                "createdAt": row["created_at"],
-                "text": row["text"],
-                "sessionId": row["session_id"] if row["session_id"] is not None else -1,
-                "kind": row["kind"],
-                "read": bool(row["read"]),
-            }
-            for row in conn.execute("SELECT * FROM notifications ORDER BY created_at DESC")
-        ]
-        self.endResetModel()
-
-    def rowCount(self, parent=QModelIndex()) -> int:
-        return len(self._entries)
-
-    def data(self, index: QModelIndex, role: int = Qt.DisplayRole):
-        if not index.isValid():
-            return None
-        entry = self._entries[index.row()]
-        for name, r in NOTIF_ROLE_MAP.items():
-            if r == role:
-                return entry.get(name)
-        return None
-
-    def roleNames(self) -> dict:
-        return {r: QByteArray(n.encode()) for n, r in NOTIF_ROLE_MAP.items()}
-
-    def unread_count(self) -> int:
-        return sum(1 for e in self._entries if not e["read"])

@@ -5,15 +5,16 @@ from __future__ import annotations
 import logging
 import sqlite3
 import subprocess
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 from PySide6.QtCore import Property, QObject, QUrl, Signal, Slot
 
-from . import __version__, db, device_watch, dnglab_setup, inhibit, notifications, paths, scanner, settings_store
+from . import __version__, db, device_watch, dnglab_setup, inhibit, paths, scanner, settings_store
 from .blur import compositor_supports_blur
 from .import_worker import ImportRequest, ImportWorker
-from .list_models import NotificationListModel, SessionListModel, SourceListModel
+from .list_models import SessionListModel, SourceListModel
 from .notifications import NotificationManager
 from .preview_worker import PreviewWorker
 from .stats_worker import SourceStatsWorker
@@ -29,7 +30,6 @@ logger = logging.getLogger(__name__)
 
 class AppController(QObject):
     systemPrefersDarkChanged = Signal()
-    unreadNotificationCountChanged = Signal()
     dnglabReadyChanged = Signal()
     watchEnabledChanged = Signal()
     navigateToSession = Signal(int, str)  # session_id, device_label
@@ -49,10 +49,8 @@ class AppController(QObject):
             demo_module.seed_if_empty(self._conn)
 
         self.sessionModel = SessionListModel(self)
-        self.notificationModel = NotificationListModel(self)
         self.sourcesModel = SourceListModel(self)
         self.sessionModel.load(self._conn)
-        self.notificationModel.load(self._conn)
         for row in self._conn.execute("SELECT * FROM saved_folders ORDER BY sort_order"):
             self.sourcesModel.upsert(f"folder:{row['id']}", row["label"], "folder", True, row["path"], True)
 
@@ -74,6 +72,8 @@ class AppController(QObject):
         self._active_done = 0
         self._active_total = 0
         self._active_file = ""
+        self._active_eta = -1
+        self._phase_started: tuple[str, float, int] = ("", 0.0, 0)
         self._queued_count = 0
         self._imports_paused = False
         # source_root values with a queued or running session right now --
@@ -153,8 +153,6 @@ class AppController(QObject):
         self._preview_worker.wait(5000)
         self._stats_worker.request_stop()
         self._stats_worker.wait(5000)
-        if self._dnglab_worker is not None:
-            self._dnglab_worker.wait(1000)
         self._conn.close()
 
     # --- device detection / import sessions --------------------------------------
@@ -183,11 +181,8 @@ class AppController(QObject):
         if not bool(settings_store.get(self._conn, "watch_enabled")):
             return
         text = f"{label}: importing new photos…"
-        # Transient only (no in-app history entry, and the "transient" hint
-        # tells the desktop's own notification daemon not to keep it in its
-        # history/notification-center panel either) -- this fires on every
-        # device plug-in and would otherwise clog both; the import_complete
-        # notification that follows shortly after is the one worth keeping.
+        # Transient: fires on every device plug-in and would otherwise clog
+        # the desktop's notification history.
         self._notification_manager.send("Photo Spool", text, transient=True)
         self._submit_import(ImportRequest(source_root=root, device_label=label, kind=kind))
 
@@ -230,6 +225,8 @@ class AppController(QObject):
         self._active_done = 0
         self._active_total = 0
         self._active_file = ""
+        self._active_eta = -1
+        self._phase_started = ("", 0.0, 0)
         self.activeSessionChanged.emit()
 
     def _on_session_progress(self, session_id: int, phase: str, done: int, total: int, filename: str) -> None:
@@ -239,7 +236,20 @@ class AppController(QObject):
             self._active_done = done
             self._active_total = total
             self._active_file = filename
+            self._active_eta = self._estimate_eta(phase, done, total)
             self.activeSessionChanged.emit()
+
+    def _estimate_eta(self, phase: str, done: int, total: int) -> int:
+        now = time.monotonic()
+        if phase != self._phase_started[0]:
+            self._phase_started = (phase, now, done)
+            return -1
+        _, started, done_at_start = self._phase_started
+        elapsed = now - started
+        progressed = done - done_at_start
+        if elapsed < 3 or progressed <= 0 or total <= done:
+            return -1
+        return round((total - done) * elapsed / progressed)
 
     def _on_session_finished(self, session_id: int) -> None:
         row = self._conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
@@ -264,25 +274,21 @@ class AppController(QObject):
             self._active_done = 0
             self._active_total = 0
             self._active_file = ""
+            self._active_eta = -1
             self.activeSessionChanged.emit()
         if row["status"] == "failed":
             text = f"{row['device_label']}: import failed -- {row['error_message'] or 'unknown error'}"
-            kind = "error"
         elif row["imported_count"] or row["duplicate_count"]:
             parts = [f"{row['imported_count']} imported"]
             if row["duplicate_count"]:
-                parts.append(f"{row['duplicate_count']} already had copies")
+                parts.append(f"{row['duplicate_count']} duplicates skipped")
             if row["failed_count"]:
                 parts.append(f"{row['failed_count']} failed")
             text = f"{row['device_label']}: " + ", ".join(parts) + "."
-            kind = "import_complete"
         else:
             return  # nothing found on the card -- not worth a notification
-        notifications.record(self._conn, text, session_id, kind)
         if settings_store.get(self._conn, "notify_on_complete"):
             self._notification_manager.send("Photo Spool", text, session_id)
-        self.notificationModel.load(self._conn)
-        self.unreadNotificationCountChanged.emit()
 
     def _on_dnglab_unavailable(self, session_id: int) -> None:
         self.toast.emit("The DNG converter (dnglab) isn't installed -- install the dnglab package.")
@@ -385,19 +391,15 @@ class AppController(QObject):
         except OSError:
             self.toast.emit("Could not open the file browser.")
 
-    @Slot(int)
-    def ejectSession(self, session_id: int) -> None:
-        row = self._conn.execute(
-            "SELECT ejectable_path FROM sessions WHERE id = ?", (session_id,)
-        ).fetchone()
-        if row is None or not row["ejectable_path"]:
+    @Slot(str)
+    def ejectSource(self, source_key: str) -> None:
+        entry = self.sourcesModel.entry_for(source_key)
+        if entry is None or not entry["rootPath"]:
             return
-        ok = self._device_watcher.eject(row["ejectable_path"])
-        if ok:
-            with self._conn:
-                self._conn.execute("UPDATE sessions SET ejected = 1 WHERE id = ?", (session_id,))
-            self.sessionModel.mark_ejected(session_id)
-        else:
+        if entry["rootPath"] in self._in_flight_roots:
+            self.toast.emit(f"{entry['label']} is still importing.")
+            return
+        if not self._device_watcher.eject(entry["rootPath"]):
             self.toast.emit("Could not eject -- it may still be in use.")
 
     @Slot(int)
@@ -560,29 +562,6 @@ class AppController(QObject):
         ).fetchone()
         self.navigateToSession.emit(session_id, row["device_label"] if row else "")
 
-    @Slot(int)
-    def markNotificationRead(self, notification_id: int) -> None:
-        notifications.mark_read(self._conn, notification_id)
-        self.notificationModel.load(self._conn)
-        self.unreadNotificationCountChanged.emit()
-
-    @Slot()
-    def markAllNotificationsRead(self) -> None:
-        notifications.mark_all_read(self._conn)
-        self.notificationModel.load(self._conn)
-        self.unreadNotificationCountChanged.emit()
-
-    @Slot()
-    def clearNotifications(self) -> None:
-        notifications.clear_all(self._conn)
-        self.notificationModel.load(self._conn)
-        self.unreadNotificationCountChanged.emit()
-
-    def _unread_notification_count(self) -> int:
-        return self.notificationModel.unread_count()
-
-    unreadCount = Property(int, _unread_notification_count, notify=unreadNotificationCountChanged)
-
     # --- active-session status, for the persistent top status bar -------------------
 
     activeSessionId = Property(int, lambda self: self._active_session_id, notify=activeSessionChanged)
@@ -591,11 +570,13 @@ class AppController(QObject):
     activeDone = Property(int, lambda self: self._active_done, notify=activeSessionChanged)
     activeTotal = Property(int, lambda self: self._active_total, notify=activeSessionChanged)
     activeFile = Property(str, lambda self: self._active_file, notify=activeSessionChanged)
+    activeEtaSeconds = Property(int, lambda self: self._active_eta, notify=activeSessionChanged)
     queuedCount = Property(int, lambda self: self._queued_count, notify=activeSessionChanged)
 
     @Slot(bool)
     def setImportsPaused(self, paused: bool) -> None:
         self._imports_paused = paused
+        self._phase_started = ("", 0.0, 0)
         self._import_worker.set_paused(paused)
         self.importsPausedChanged.emit()
 

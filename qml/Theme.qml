@@ -26,7 +26,7 @@ QtObject {
     readonly property color surfaceElevated: isDark ? "#3A3936" : "#FFFFFF"
     readonly property color border: isDark ? "#43413C" : "#E5E3D8"
     readonly property color textPrimary: isDark ? "#F5F4ED" : "#1F1E1D"
-    readonly property color textSecondary: isDark ? "#A8A69C" : "#87867F"
+    readonly property color textSecondary: isDark ? "#B5B3A8" : "#73726C"
     readonly property color textOnAccent: "#ffffff"
 
     readonly property color accent: isDark ? "#E0815F" : "#D97757"
@@ -54,6 +54,8 @@ QtObject {
     readonly property int radiusSmall: 8
     readonly property int radiusMedium: 14
     readonly property int radiusLarge: 20
+
+    readonly property int contentMaxWidth: 1100
 
     readonly property int animFast: 120
     readonly property int animMedium: 220

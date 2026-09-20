@@ -68,9 +68,10 @@ Window {
             }
 
             RowLayout {
-                anchors.fill: parent
-                anchors.leftMargin: 22
-                anchors.rightMargin: 22
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: Math.min(parent.width - 44, Theme.contentMaxWidth)
                 spacing: 10
 
                 Text {
@@ -83,14 +84,7 @@ Window {
                 Item { Layout.fillWidth: true }
 
                 HeaderIconButton {
-                    icon: "🔔"
-                    badgeCount: appController.unreadCount
-                    tooltip: "Notifications" + (appController.unreadCount > 0 ? " (" + appController.unreadCount + " unread)" : "")
-                    onClicked: notifPopup.open()
-                }
-
-                HeaderIconButton {
-                    icon: Theme.isDark ? "🌙" : "☀️"
+                    icon: Theme.isDark ? "moon" : "sun"
                     tooltip: Theme.isDark ? "Switch to light mode" : "Switch to dark mode"
                     onClicked: {
                         Theme.mode = Theme.isDark ? "light" : "dark"
@@ -99,13 +93,13 @@ Window {
                 }
 
                 HeaderIconButton {
-                    icon: "📊"
+                    icon: "chart"
                     tooltip: "Library stats"
                     onClicked: { statsView.reload(); statsPopup.open() }
                 }
 
                 HeaderIconButton {
-                    icon: "⚙️"
+                    icon: "settings"
                     tooltip: "Settings"
                     onClicked: settingsPopup.open()
                 }
@@ -162,32 +156,6 @@ Window {
         }
 
         StatsView { id: statsView; anchors.fill: parent }
-    }
-
-    Popup {
-        id: notifPopup
-        x: window.width - width - 22
-        y: 60
-        width: Math.min(380, window.width - 40)
-        height: Math.min(480, window.height - 100)
-        modal: false
-        focus: true
-        padding: 0
-        background: Rectangle { color: Theme.surface; radius: Theme.radiusLarge; border.color: Theme.border; border.width: 1 }
-
-        enter: Transition {
-            NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.animMedium; easing.type: Easing.OutCubic }
-            NumberAnimation { property: "scale"; from: 0.96; to: 1; duration: Theme.animMedium; easing.type: Easing.OutCubic }
-        }
-        exit: Transition {
-            NumberAnimation { property: "opacity"; from: 1; to: 0; duration: Theme.animFast; easing.type: Easing.InCubic }
-            NumberAnimation { property: "scale"; from: 1; to: 0.96; duration: Theme.animFast; easing.type: Easing.InCubic }
-        }
-
-        NotificationHistoryView {
-            anchors.fill: parent
-            onSessionSelected: (sessionId) => { detailPopup.openForSession(sessionId); notifPopup.close() }
-        }
     }
 
     Popup {

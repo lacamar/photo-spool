@@ -86,7 +86,7 @@ def convert_batch(dnglab_path: Path, staging_in: Path, staging_out: Path, compre
     return proc.returncode, "".join(tail)
 
 
-def set_dng_backward_version(path: Path) -> None:
+def set_dng_backward_version(path: Path, original_raw_name: str | None = None) -> None:
     """Rewrites DNGBackwardVersion to 1.4.0.0 in place, for every DNG that
     lands in the library -- both dnglab's own conversions and DNG-
     passthrough files (iPhone ProRAW, cameras that shoot DNG natively),
@@ -94,10 +94,16 @@ def set_dng_backward_version(path: Path) -> None:
     understand. Same fix as ~/.local/bin/dng-version-converter, applied at
     import time instead of as a separate manual pass. Non-fatal on
     failure -- the file is already correctly placed either way, so a
-    exiftool hiccup here shouldn't fail the whole import."""
+    exiftool hiccup here shouldn't fail the whole import.
+
+    `original_raw_name` replaces the hash-named staging filename dnglab
+    records as OriginalRawFileName."""
+    args = [f"-DNGBackwardVersion={DNG_BACKWARD_VERSION}"]
+    if original_raw_name:
+        args.append(f"-OriginalRawFileName={original_raw_name}")
     try:
         subprocess.run(
-            ["exiftool", f"-DNGBackwardVersion={DNG_BACKWARD_VERSION}", "-overwrite_original", "-P", str(path)],
+            ["exiftool", *args, "-overwrite_original", "-P", str(path)],
             capture_output=True, text=True, timeout=DNG_VERSION_TIMEOUT_S, check=True,
         )
     except (subprocess.CalledProcessError, OSError, subprocess.TimeoutExpired):

@@ -350,7 +350,7 @@ class ImportWorker(QThread):
         placed_dest: dict[str, str] = {}
 
         def place_file(cand: scanner.Candidate, order: int, source_hash: str, produced: Path,
-                        move: bool) -> None:
+                        move: bool, converted: bool = False) -> None:
             nonlocal placed, bytes_saved
             placed += 1
             self.sessionProgress.emit(session_id, PHASE_PLACING, placed, total_to_place, cand.path.name)
@@ -367,7 +367,7 @@ class ImportWorker(QThread):
                 return
 
             if dest_suffix == ".dng":
-                converter.set_dng_backward_version(dest)
+                converter.set_dng_backward_version(dest, cand.path.name if converted else None)
             elif cand.camera_model_inferred and scanner.is_video(dest):
                 converter.set_camera_model(dest, cand.camera_model)
             dest_bytes = dest.stat().st_size
@@ -414,7 +414,7 @@ class ImportWorker(QThread):
                 snippet = (tail or "conversion failed").strip()[-300:]
                 self._record_file(conn, session_id, cand.path.name, "failed", "", snippet, order)
                 continue
-            place_file(cand, order, source_hash, converted, move=True)
+            place_file(cand, order, source_hash, converted, move=True, converted=True)
 
         for source_hash, cand, order, staged_path in to_copy:
             self._wait_if_paused()

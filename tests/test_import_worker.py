@@ -153,6 +153,7 @@ class ConversionRoutingTests(ImportWorkerTestCase):
         with mock.patch("backend.import_worker.converter.set_dng_backward_version") as mock_set_version:
             session_id = self._run()
             mock_set_version.assert_called_once()
+            self.assertEqual(mock_set_version.call_args.args[1], "DSC00001.ARW")
         row = self._session(session_id)
         self.assertEqual(row["imported_count"], 1)
         dest_row = self.conn.execute(

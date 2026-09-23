@@ -1,5 +1,5 @@
 Name:           photo-spool
-Version:        0.4.2
+Version:        0.4.3
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -173,6 +173,9 @@ done
 %{_userunitdir}/%{name}.service
 
 %changelog
+* Wed Sep 23 2026 Photo Spool <noreply@example.com> - 0.4.3-1
+- Drop fix-dng-metadata tool from repo
+
 * Wed Sep 23 2026 Photo Spool <noreply@example.com> - 0.4.2-1
 - Record original raw filename in converted DNGs
 - Add tools/fix-dng-metadata.py for pre-0.8.0-6 dnglab conversions

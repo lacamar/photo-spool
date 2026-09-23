@@ -287,6 +287,8 @@ def main() -> int:
     ap.add_argument("--backup-dir", type=Path, help="copy each original here before replacing it")
     ap.add_argument("--dnglab", default="dnglab")
     ap.add_argument("--db", type=Path, default=xdg("XDG_DATA_HOME", ".local/share") / "photo-spool" / "data.db")
+    ap.add_argument("--any-dng", action="store_true", help="with explicit paths, also check DNGs that aren't "
+                    "dnglab conversions recorded in the import database")
     ap.add_argument("--ignore-lightroom", action="store_true", help="don't refuse to run while Lightroom is open")
     ap.add_argument("-j", "--jobs", type=int, default=4)
     ap.add_argument("-v", "--verbose", action="store_true", help="list every planned change per file")
@@ -300,6 +302,12 @@ def main() -> int:
     else:
         files = [Path(p) for p in rows]
     files = [f.resolve() for f in files if f.is_file() and not f.name.startswith(".")]
+    if args.paths and not args.any_dng:
+        skipped = [f for f in files if str(f) not in rows]
+        files = [f for f in files if str(f) in rows]
+        if skipped:
+            print(f"Skipping {len(skipped)} DNGs not recorded as dnglab conversions in the import database "
+                  "(--any-dng to include them)")
     if not files:
         print("No DNG files to check.")
         return 0

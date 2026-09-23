@@ -11,6 +11,3 @@ test:
 
 clean-db:
     rm -f "${XDG_DATA_HOME:-$HOME/.local/share}/photo-spool/data.db"
-
-fix-dng *ARGS:
-    python3 tools/fix-dng-metadata.py {{ARGS}}

@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "photo_spool",
+  "project_id": "feefdcc5-08a2-4fab-b232-53caee24131f"
+}

@@ -11,3 +11,6 @@ test:
 
 clean-db:
     rm -f "${XDG_DATA_HOME:-$HOME/.local/share}/photo-spool/data.db"
+
+lint:
+    ruff check .

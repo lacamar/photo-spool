@@ -3,3 +3,14 @@ __pycache__/
 .venv/
 *.db
 *.db-journal
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+node_modules/
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+.beads-credential-key
+.beads/proxieddb/
+*.gate.lock*

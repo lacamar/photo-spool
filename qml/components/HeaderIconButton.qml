@@ -10,18 +10,16 @@ Rectangle {
 
     implicitWidth: 34
     implicitHeight: 34
-    radius: 17
-    color: mouseArea.containsMouse ? Theme.accentSoft : Theme.chipBackground
-    scale: mouseArea.pressed ? 0.94 : 1
+    radius: Theme.radiusSmall
+    color: mouseArea.pressed ? Theme.tint(Theme.textPrimary, 0.1) : mouseArea.containsMouse ? Theme.hover : "transparent"
 
     Behavior on color { ColorAnimation { duration: Theme.animFast } }
-    Behavior on scale { NumberAnimation { duration: Theme.animFast; easing.type: Easing.OutCubic } }
 
     Icon {
         anchors.centerIn: parent
         name: root.icon
-        size: 16
-        color: mouseArea.containsMouse ? Theme.accent : Theme.textPrimary
+        size: 18
+        color: Theme.textPrimary
     }
 
     MouseArea {
@@ -33,6 +31,6 @@ Rectangle {
     }
 
     ToolTip.visible: root.tooltip.length > 0 && mouseArea.containsMouse
-    ToolTip.delay: 500
+    ToolTip.delay: 600
     ToolTip.text: root.tooltip
 }

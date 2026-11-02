@@ -47,6 +47,8 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
+from . import wifi_iphone
+
 try:
     import dbus
 except ImportError:  # pragma: no cover - dbus-python always present via dnf dep
@@ -220,6 +222,8 @@ class DeviceWatcher(QObject):
         self._mtp_mount_attempts: dict[str, float] = {}  # activation uri -> last attempt time
         self._gvfs_fuse_last_check = 0.0
         self._gvfs_unmounted_list_last_check = 0.0
+        self._usb_iphones: set[str] = set()
+        self._wifi = None
         self._bus = None
         if dbus is not None:
             try:
@@ -232,11 +236,14 @@ class DeviceWatcher(QObject):
 
     def start(self, mtp_enabled: bool = True) -> None:
         self._mtp_enabled = mtp_enabled
+        self._wifi = wifi_iphone.WifiIphones()
         self._poll()
         self._timer.start(POLL_INTERVAL_MS)
 
     def stop(self) -> None:
         self._timer.stop()
+        if self._wifi is not None:
+            self._wifi.close()
 
     def set_mtp_enabled(self, enabled: bool) -> None:
         self._mtp_enabled = enabled
@@ -390,6 +397,17 @@ class DeviceWatcher(QObject):
             gvfs_dirs = set()
 
         current_keys = {f"gvfs-dir:{name}" for name in gvfs_dirs}
+        wifi_mounts = self._wifi.poll(self._usb_iphones) if self._wifi is not None else {}
+        for udid, mountpoint in wifi_mounts.items():
+            key = f"wifi:{udid}"
+            current_keys.add(key)
+            if key not in self._sources:
+                root = _narrow_iphone_root(str(mountpoint))
+                label = "iPhone (Wi-Fi)"
+                self._sources[key] = {"label": label, "kind": "iphone", "mounted": True, "root": root,
+                                       "camera_media": None}
+                self.sourceAdded.emit(key, label, "iphone", True, root)
+                self._maybe_fire_auto_import(key, root, label, "mtp")
         for name in gvfs_dirs:
             key = f"gvfs-dir:{name}"
             root = str(gvfs_dir / name)
@@ -456,7 +474,8 @@ class DeviceWatcher(QObject):
             # above can never find it. idevice_id (usbmuxd) reports physically
             # connected UDIDs independent of gvfs's own incomplete volume
             # enumeration, so use that instead to know what to try mounting.
-            for udid in self._list_connected_iphone_udids():
+            self._usb_iphones = self._list_connected_iphone_udids()
+            for udid in self._usb_iphones:
                 if f"afc:host={udid}" in gvfs_dirs:
                     continue  # main share already mounted
                 attempt_key = f"afc-main:{udid}"
@@ -518,6 +537,11 @@ class DeviceWatcher(QObject):
             except Exception:
                 logger.info("Unmount via UDisks2 failed for %s", root_path, exc_info=True)
                 return False
+        if key and key.startswith("wifi:") and self._wifi is not None:
+            self._wifi.eject(key.removeprefix("wifi:"))
+            del self._sources[key]
+            self.sourceRemoved.emit(key)
+            return True
         try:
             subprocess.run(["gio", "mount", "-u", root_path], capture_output=True, timeout=15)
             if key:

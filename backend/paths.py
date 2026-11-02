@@ -35,6 +35,12 @@ def thumbnail_cache_dir() -> Path:
     return cache_home() / "thumbnails" / "v2"
 
 
+def theme_file() -> Path:
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    base = Path(xdg) if xdg else Path.home() / ".config"
+    return base / APP_NAME / "theme.json"
+
+
 def db_path() -> Path:
     return data_home() / "data.db"
 

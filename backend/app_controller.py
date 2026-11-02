@@ -600,6 +600,7 @@ class AppController(QObject):
         return self._blur_available
 
     blurSupported = Property(bool, _blur_supported, constant=True)
+    theme = Property(QObject, lambda self: self._theme_portal, constant=True)
 
     appVersion = Property(str, lambda self: __version__, constant=True)
 

@@ -9,12 +9,12 @@ Rectangle {
     property string tooltip: ""
     signal clicked()
 
-    implicitWidth: labelText.implicitWidth + 26
-    implicitHeight: 34
+    readonly property color fill: prominent ? Theme.accent : Theme.chipBackground
+
+    implicitWidth: labelText.implicitWidth + 32
+    implicitHeight: 36
     radius: height / 2
-    color: prominent
-           ? (mouseArea.containsMouse ? Qt.darker(Theme.accent, 1.15) : Theme.accent)
-           : (mouseArea.containsMouse ? Theme.accentSoft : Theme.chipBackground)
+    color: mouseArea.pressed ? Qt.darker(fill, 1.15) : mouseArea.containsMouse ? Qt.lighter(fill, 1.08) : fill
 
     Behavior on color { ColorAnimation { duration: Theme.animFast } }
 
@@ -22,8 +22,8 @@ Rectangle {
         id: labelText
         anchors.centerIn: parent
         text: root.label
-        font.pixelSize: 13
-        font.weight: Font.Medium
+        font.pixelSize: 14
+        font.weight: Font.DemiBold
         color: root.prominent ? Theme.textOnAccent : Theme.textPrimary
     }
 
@@ -36,6 +36,6 @@ Rectangle {
     }
 
     ToolTip.visible: root.tooltip.length > 0 && mouseArea.containsMouse
-    ToolTip.delay: 500
+    ToolTip.delay: 600
     ToolTip.text: root.tooltip
 }

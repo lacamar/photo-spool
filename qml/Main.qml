@@ -31,6 +31,8 @@ Window {
     Component.onCompleted: {
         Theme.mode = appController.getSetting("theme_mode")
         Theme.systemPrefersDark = appController.systemPrefersDark
+        Theme.systemAccent = Qt.binding(() => appController.theme.accent)
+        Theme.custom = Qt.binding(() => appController.theme.custom)
     }
 
     Connections {
@@ -47,7 +49,7 @@ Window {
 
     Rectangle {
         anchors.fill: parent
-        color: appController.blurSupported ? Theme.backgroundGlass : Theme.backgroundGlassFallback
+        color: Theme.backgroundGlass
         Behavior on color { ColorAnimation { duration: Theme.animMedium } }
     }
 
@@ -57,7 +59,7 @@ Window {
 
         Rectangle {
             Layout.fillWidth: true
-            implicitHeight: 64
+            implicitHeight: 60
             color: "transparent"
 
             Rectangle {
@@ -122,7 +124,8 @@ Window {
         modal: true
         focus: true
         padding: 0
-        background: Rectangle { color: Theme.surface; radius: Theme.radiusLarge; border.color: Theme.border; border.width: 1 }
+        background: Rectangle { color: Theme.surface; radius: Theme.radiusLarge; border.color: Theme.isDark ? Theme.border : "transparent" }
+        Overlay.modal: Rectangle { color: Qt.rgba(0, 0, 0, 0.35) }
 
         enter: Transition {
             NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.animMedium; easing.type: Easing.OutCubic }
@@ -144,7 +147,8 @@ Window {
         modal: true
         focus: true
         padding: 0
-        background: Rectangle { color: Theme.surface; radius: Theme.radiusLarge; border.color: Theme.border; border.width: 1 }
+        background: Rectangle { color: Theme.surface; radius: Theme.radiusLarge; border.color: Theme.isDark ? Theme.border : "transparent" }
+        Overlay.modal: Rectangle { color: Qt.rgba(0, 0, 0, 0.35) }
 
         enter: Transition {
             NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.animMedium; easing.type: Easing.OutCubic }
@@ -166,7 +170,8 @@ Window {
         modal: true
         focus: true
         padding: 0
-        background: Rectangle { color: Theme.surface; radius: Theme.radiusLarge; border.color: Theme.border; border.width: 1 }
+        background: Rectangle { color: Theme.surface; radius: Theme.radiusLarge; border.color: Theme.isDark ? Theme.border : "transparent" }
+        Overlay.modal: Rectangle { color: Qt.rgba(0, 0, 0, 0.35) }
 
         enter: Transition {
             NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.animMedium; easing.type: Easing.OutCubic }

@@ -1,5 +1,5 @@
 Name:           photo-spool
-Version:        0.4.4
+Version:        0.5.0
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -32,6 +32,7 @@ BuildRequires:  systemd-rpm-macros
 BuildRequires:  python3-pyside6
 BuildRequires:  perl-Image-ExifTool
 BuildRequires:  ffmpeg-free
+BuildRequires:  python3-zeroconf
 
 Requires:       python3
 Requires:       python3-pyside6
@@ -63,6 +64,10 @@ Requires:       gvfs-fuse
 # afc://<udid>/ URI. Without it, only the per-app document shares
 # auto-mount, and the device looks undetected after every replug.
 Requires:       libimobiledevice-utils
+# iPhone over Wi-Fi (backend/wifi_iphone.py)
+Requires:       ifuse
+Requires:       fuse3
+Requires:       python3-zeroconf
 # Optional: raw-Wayland compositor-blur detection (progressive enhancement,
 # app works fine without it -- see backend/blur.py).
 Recommends:     python3-pywayland
@@ -173,6 +178,11 @@ done
 %{_userunitdir}/%{name}.service
 
 %changelog
+* Mon Nov 02 2026 Photo Spool <noreply@example.com> - 0.5.0-1
+- Import from paired iPhones over Wi-Fi
+- Match tidings palette, buttons, radii, toast
+- Read colour overrides from theme.json
+
 * Mon Nov 02 2026 Photo Spool <noreply@example.com> - 0.4.4-1
 - Transient notification when nothing imported
 

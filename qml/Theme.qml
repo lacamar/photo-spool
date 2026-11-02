@@ -10,6 +10,10 @@ QtObject {
 
     property string mode: "system" // "light" | "dark" | "system"
     property bool systemPrefersDark: false
+    // Portal accent-color and theme.json overrides (backend/theme_portal.py);
+    // same palette and keys as tidings.
+    property string systemAccent: ""
+    property var custom: ({})
 
     readonly property bool isDark: mode === "dark" || (mode === "system" && systemPrefersDark)
 
@@ -17,29 +21,38 @@ QtObject {
         mode = isDark ? "light" : "dark"
     }
 
-    // Warm, muted palette in the spirit of Claude's brand: cream/paper
-    // light mode, warm charcoal (not blue-black) dark mode, terracotta accent.
-    readonly property color background: isDark ? "#262624" : "#F5F4ED"
-    readonly property color backgroundGlass: isDark ? Qt.rgba(0.149, 0.149, 0.141, 0.72) : Qt.rgba(0.984, 0.980, 0.965, 0.72)
-    readonly property color backgroundGlassFallback: isDark ? Qt.rgba(0.149, 0.149, 0.141, 0.95) : Qt.rgba(0.965, 0.961, 0.945, 0.97)
-    readonly property color surface: isDark ? "#30302E" : "#FFFFFF"
-    readonly property color surfaceElevated: isDark ? "#3A3936" : "#FFFFFF"
-    readonly property color border: isDark ? "#43413C" : "#E5E3D8"
-    readonly property color textPrimary: isDark ? "#F5F4ED" : "#1F1E1D"
-    readonly property color textSecondary: isDark ? "#B5B3A8" : "#73726C"
-    readonly property color textOnAccent: "#ffffff"
+    function tint(c, a) { return Qt.rgba(c.r, c.g, c.b, a) }
 
-    readonly property color accent: isDark ? "#E0815F" : "#D97757"
-    readonly property color accentSoft: isDark ? Qt.rgba(0.878, 0.506, 0.373, 0.20) : Qt.rgba(0.851, 0.467, 0.341, 0.13)
-    readonly property color chipBackground: isDark ? "#3A3936" : "#EEEDE2"
-    readonly property color danger: isDark ? "#E58A76" : "#C0392B"
-    readonly property color dangerSoft: isDark ? Qt.rgba(0.898, 0.541, 0.463, 0.18) : Qt.rgba(0.753, 0.224, 0.169, 0.10)
-    readonly property color priority: isDark ? "#E0B84A" : "#C89B2C"
+    readonly property var base: isDark
+        ? { bg: "#1c1c1f", side: "#151517", raised: "#2a2a2e", fg: "#f2f2f4", sub: "#9d9da6", line: "#2b2b30" }
+        : { bg: "#ffffff", side: "#f4f4f6", raised: "#ffffff", fg: "#1b1b20", sub: "#6c6c76", line: "#e6e6ea" }
+    // theme.json is generated for the system scheme, so a manual override ignores it
+    function pick(key, fallback) {
+        return mode === "system" && custom[key] !== undefined ? custom[key] : fallback
+    }
 
-    readonly property color healthFresh: "#7A9070"
-    readonly property color healthDue: "#D4A72C"
-    readonly property color healthOverdue: "#C0533A"
-    readonly property color healthDormant: isDark ? "#948F86" : "#9C9890"
+    readonly property real opacity: pick("opacity", 0.7)
+    readonly property color background: pick("side", base.side)
+    readonly property color backgroundGlass: tint(background, opacity)
+    readonly property color surface: pick("raised", base.raised)
+    readonly property color surfaceElevated: surface
+    readonly property color border: pick("line", base.line)
+    readonly property color textPrimary: pick("fg", base.fg)
+    readonly property color textSecondary: pick("sub", base.sub)
+    readonly property color textOnAccent: "white"
+
+    readonly property color accent: pick("accent", systemAccent || "#3584e4")
+    readonly property color accentSoft: tint(accent, isDark ? 0.24 : 0.13)
+    readonly property color hover: tint(textPrimary, 0.05)
+    readonly property color chipBackground: tint(textPrimary, 0.08)
+    readonly property color danger: isDark ? "#ff7b63" : "#e01b24"
+    readonly property color dangerSoft: tint(danger, 0.12)
+    readonly property color priority: "#e5a50a"
+
+    readonly property color healthFresh: "#26a269"
+    readonly property color healthDue: priority
+    readonly property color healthOverdue: danger
+    readonly property color healthDormant: textSecondary
 
     function healthColor(status) {
         switch (status) {
@@ -52,8 +65,8 @@ QtObject {
     }
 
     readonly property int radiusSmall: 8
-    readonly property int radiusMedium: 14
-    readonly property int radiusLarge: 20
+    readonly property int radiusMedium: 12
+    readonly property int radiusLarge: 16
 
     readonly property int contentMaxWidth: 1100
 

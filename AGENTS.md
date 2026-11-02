@@ -155,6 +155,17 @@ periodic best-effort `gio mount <uri>` retry instead.
 invalidated back to "unloaded" on any mount-state change and re-requested on mount, manual refresh, and
 after an import session finishes for that source.
 
+### iPhone over Wi-Fi (`wifi_iphone.py`)
+
+Stock usbmuxd has no network support, so `WifiIphones` runs a minimal usbmuxd stand-in on
+`$XDG_RUNTIME_DIR/photo-spool/usbmuxd.sock` (ListDevices/ReadPairRecord/ReadBUID only; NetworkAddress is a
+native Linux sockaddr) fed by zeroconf discovery of `_apple-mobdev2._tcp`, and mounts the phone read-only with
+`USBMUXD_SOCKET_ADDRESS=UNIX:... ifuse --network`. Registry key `wifi:<udid>`, kind `iphone`. The mDNS MAC is
+mapped to a UDID via lockdown's `BonjourFullServiceName`, learned whenever the phone is on USB
+(`$XDG_DATA_HOME/photo-spool/wifi-iphones.json`). A phone on USB is never mounted over Wi-Fi. Caveat, live-tested
+on iOS 26.7.2 over the phone's own hotspot: lockdown and other services work over the network but
+`com.apple.afc` refuses connections; untested on a shared LAN.
+
 ### QML/Python boundary
 
 - `Theme.qml` is registered as a singleton (`qmlRegisterSingletonType`), not a context property.

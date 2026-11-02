@@ -288,7 +288,8 @@ class AppController(QObject):
         else:
             return  # nothing found on the card -- not worth a notification
         if settings_store.get(self._conn, "notify_on_complete"):
-            self._notification_manager.send("Photo Spool", text, session_id)
+            transient = row["status"] != "failed" and not row["imported_count"] and not row["failed_count"]
+            self._notification_manager.send("Photo Spool", text, session_id, transient=transient)
 
     def _on_dnglab_unavailable(self, session_id: int) -> None:
         self.toast.emit("The DNG converter (dnglab) isn't installed -- install the dnglab package.")

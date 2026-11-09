@@ -234,7 +234,8 @@ fn due(last: Option<Instant>, every: Duration) -> bool {
 
 impl DeviceWatcher {
     pub fn new(mtp_enabled: bool, emit: impl Fn(DeviceEvent) + Send + 'static) -> Self {
-        let bus = Connection::system()
+        let bus = zbus::blocking::connection::Builder::system()
+            .and_then(|b| b.method_timeout(Duration::from_secs(25)).build())
             .map_err(|e| log::warn!("Could not connect to system bus for UDisks2: {e}"))
             .ok();
         Self {

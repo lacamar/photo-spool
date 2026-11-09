@@ -17,8 +17,10 @@ const PORTAL: (&str, &str) = (
 const APPEARANCE_NS: &str = "org.freedesktop.appearance";
 pub const PREFER_DARK: u32 = 1;
 
+/// Short timeout: a hung xdg-desktop-portal must never stall startup (no reply = no READY=1).
 fn session() -> Option<Connection> {
-    Connection::session()
+    zbus::blocking::connection::Builder::session()
+        .and_then(|b| b.method_timeout(std::time::Duration::from_secs(3)).build())
         .map_err(|e| log::warn!("no session bus: {e}"))
         .ok()
 }

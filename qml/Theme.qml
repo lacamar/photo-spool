@@ -1,7 +1,7 @@
 pragma Singleton
 import QtQuick
 
-// Registered as a singleton (see main.py: qmlRegisterSingletonType). Every
+// QML module singleton (build.rs). Every
 // colour a component uses comes from here as a property binding, so
 // switching `mode` (or the system scheme changing) live-rebinds the whole
 // UI -- no reload, no restart.
@@ -10,7 +10,7 @@ QtObject {
 
     property string mode: "system" // "light" | "dark" | "system"
     property bool systemPrefersDark: false
-    // Portal accent-color and theme.json overrides (backend/theme_portal.py);
+    // Portal accent-color and theme.json overrides (src/desktop.rs, src/qt/controller.rs);
     // same palette and keys as tidings.
     property string systemAccent: ""
     property var custom: ({})

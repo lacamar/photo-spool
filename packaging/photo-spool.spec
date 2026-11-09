@@ -1,42 +1,31 @@
 Name:           photo-spool
-Version:        0.5.0
+Version:        0.6.0
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
-# Personal/local tool; MIT is just a permissive default -- change freely.
 License:        MIT
 URL:            https://github.com/lacamar/photo-spool
 Source0:        %{name}-%{version}.tar.gz
+Source1:        %{name}-%{version}-vendor.tar.gz
 
-BuildArch:      noarch
+%global debug_package %{nil}
 
-# App rename (photo-import -> photo-spool), same package otherwise -- lets
-# `dnf upgrade`/`dnf install` transition a system with the old name
-# installed (confirmed live on this machine: photo-import has been enabled
-# and running for a week) straight onto this one instead of leaving both
-# installed side by side or erroring out. The XDG data dir itself is
-# migrated separately at runtime (see backend/paths.py's _migrate_data_home)
-# since that lives under $XDG_DATA_HOME, outside anything rpm tracks.
 Provides:       photo-import = %{version}-%{release}
 Obsoletes:      photo-import < %{version}-%{release}
 
+BuildRequires:  cargo
+BuildRequires:  rust
+BuildRequires:  gcc-c++
+BuildRequires:  qt6-qtbase-devel
+BuildRequires:  qt6-qtdeclarative-devel
+BuildRequires:  sqlite-devel
 BuildRequires:  desktop-file-utils
 BuildRequires:  librsvg2-tools
-BuildRequires:  python3
 BuildRequires:  systemd-rpm-macros
-# For %check's unit test suite (tests/) -- mirrors the runtime Requires
-# below that the tests actually exercise (PySide6 for backend.import_worker
-# et al., exiftool/ffmpeg for converter.py's real subprocess calls). %check
-# runs in this build chroot, which only gets BuildRequires installed, not
-# Requires, so these need to be listed twice.
-BuildRequires:  python3-pyside6
 BuildRequires:  perl-Image-ExifTool
 BuildRequires:  ffmpeg-free
-BuildRequires:  python3-zeroconf
 
-Requires:       python3
-Requires:       python3-pyside6
-Requires:       python3-dbus
+Requires:       qt6-qtdeclarative
 Requires:       glib2
 Requires:       udisks2
 Requires:       dnglab
@@ -44,33 +33,12 @@ Requires:       perl-Image-ExifTool
 Requires:       ffmpeg-free
 Requires:       xdg-utils
 Requires:       hicolor-icon-theme
-# Camera-as-MTP and iPhone-as-AFC support are advertised, first-class
-# features (not an optional edge case), so these are hard Requires, not
-# Recommends -- confirmed live against a real iPhone that a system with
-# install_weak_deps=False (this machine's own dnf.conf) silently never
-# installed gvfs-mtp/gvfs-afc at all via a plain Recommends, and that
-# gvfs-fuse (needed for an MTP/AFC mount to appear as a real POSIX path
-# to anything, not just be visible to `gio`) was missing from this spec
-# entirely. SD-card-reader import still works without any of these
-# (backend/device_watch.py degrades quietly), only MTP/AFC detection
-# needs them.
 Requires:       gvfs-mtp
 Requires:       gvfs-afc
 Requires:       gvfs-fuse
-# idevice_id -- an iPhone's main AFC share (the one with DCIM) never
-# appears as a listed, mountable Volume in `gio mount -li` at all, so
-# device_watch.py uses this (independent of gvfs's own volume
-# enumeration) to know when to proactively mount it by its well-known
-# afc://<udid>/ URI. Without it, only the per-app document shares
-# auto-mount, and the device looks undetected after every replug.
 Requires:       libimobiledevice-utils
-# iPhone over Wi-Fi (backend/wifi_iphone.py)
 Requires:       ifuse
 Requires:       fuse3
-Requires:       python3-zeroconf
-# Optional: raw-Wayland compositor-blur detection (progressive enhancement,
-# app works fine without it -- see backend/blur.py).
-Recommends:     python3-pywayland
 
 %description
 A personal, local-only Wayland desktop app that watches for an SD card, a
@@ -93,21 +61,19 @@ never re-imports anything. Native desktop notifications, XDG-portal-aware
 light/dark theming, no telemetry, no network access.
 
 %prep
-%autosetup -n %{name}-%{version}
+%autosetup -n %{name}-%{version} -a1
+mkdir -p .cargo
+printf '[source.crates-io]\nreplace-with = "vendored-sources"\n\n[source.vendored-sources]\ndirectory = "vendor"\n' > .cargo/config.toml
 
 %build
-# Pure Python + QML: nothing to compile. Rasterize the app icon from its
-# SVG source at the sizes the hicolor theme expects.
+cargo build --release --offline --locked
 mkdir -p render
 for size in 16 32 48 64 128 256 512; do
     rsvg-convert -w "${size}" -h "${size}" icons/%{name}.svg -o "render/%{name}-${size}.png"
 done
 
 %install
-install -Dm755 packaging/%{name} %{buildroot}%{_bindir}/%{name}
-
-install -d %{buildroot}%{_datadir}/%{name}
-cp -a main.py backend qml icons %{buildroot}%{_datadir}/%{name}/
+install -Dm755 target/release/%{name} %{buildroot}%{_bindir}/%{name}
 
 desktop-file-install --dir=%{buildroot}%{_datadir}/applications \
     --set-key=Exec --set-value=%{name} \
@@ -120,41 +86,14 @@ for size in 16 32 48 64 128 256 512; do
         "%{buildroot}%{_datadir}/icons/hicolor/${size}x${size}/apps/%{name}.png"
 done
 
-# A *user* unit (needs the Wayland session/D-Bus user bus), not a system
-# one -- installed but left disabled by default (no preset ships), so
-# `systemctl --user enable --now photo-spool.service` is an opt-in step,
-# not a surprise background app after a routine package upgrade.
 install -Dm644 packaging/%{name}.service %{buildroot}%{_userunitdir}/%{name}.service
 
 %check
 desktop-file-validate %{buildroot}%{_datadir}/applications/%{name}.desktop
-find %{buildroot}%{_datadir}/%{name} -name '*.py' -print0 | xargs -0 python3 -c '
-import ast, sys
-for path in sys.argv[1:]:
-    with open(path, encoding="utf-8") as fh:
-        ast.parse(fh.read(), path)
-'
-# tests/ self-isolates (every test points XDG_* at a fresh tempdir -- see
-# tests/testutil.py), so this is safe to run as-is; a failure here fails
-# the whole build, same as the checks above.
-python3 -m unittest discover -s tests -v
+cargo test --release --offline --locked
 
 %post
 %systemd_user_post %{name}.service
-# Immediately restart for every currently logged-in user who has it
-# enabled/running, so installing an update actually takes effect right
-# away instead of waiting for the user to remember to do it by hand.
-# try-restart is a safe no-op for anyone who never enabled it.
-#
-# daemon-reload first, scoped to *this* user's own systemd --user manager
-# instance -- confirmed live: without it, try-restart can still be using
-# that manager's in-memory copy of the *previous* unit file (e.g. the
-# 0.2.31 upgrade that switched Type=simple -> Type=notify), so the
-# restarted process runs the new code correctly but the manager never
-# receives its READY=1 (that unit generation predates NotifyAccess even
-# existing for it) and marks the start "failed (protocol)" -- while the
-# actual process keeps running fine, just orphaned from systemd's
-# tracking, invisible to `systemctl status` and never watchdog-protected.
 loginctl list-users --no-legend 2>/dev/null | while read -r uid user _; do
     [ -S "/run/user/${uid}/bus" ] || continue
     XDG_RUNTIME_DIR="/run/user/${uid}" runuser -u "$user" -- \
@@ -170,14 +109,19 @@ done
 %systemd_user_postun_with_restart %{name}.service
 
 %files
+%license LICENSE
 %{_bindir}/%{name}
-%{_datadir}/%{name}/
 %{_datadir}/applications/%{name}.desktop
 %{_datadir}/icons/hicolor/*/apps/%{name}.png
 %{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
 %{_userunitdir}/%{name}.service
 
 %changelog
+* Mon Nov 09 2026 Photo Spool <noreply@example.com> - 0.6.0-1
+- Rewrite in Rust (cxx-qt, same QML UI)
+- Tray via StatusNotifierItem
+- Drop Python runtime dependencies
+
 * Mon Nov 02 2026 Photo Spool <noreply@example.com> - 0.5.0-1
 - Import from paired iPhones over Wi-Fi
 - Match tidings palette, buttons, radii, toast

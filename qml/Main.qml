@@ -8,12 +8,9 @@ import "components"
 
 Window {
     id: window
-    // One-time read of the startHidden context property (main.py) --
-    // avoids a visible flash-then-hide when launched via the systemd
-    // service. Once shown/hidden imperatively (show_window() in main.py,
-    // or the tray/close-button handlers below), this initial binding is
-    // superseded like any other QML property binding.
-    visible: !startHidden
+    // One-time read: avoids a flash-then-hide under the systemd service;
+    // superseded once the window is shown/hidden imperatively.
+    visible: !appController.startHidden
     width: 760
     height: 720
     minimumWidth: 480
@@ -22,17 +19,31 @@ Window {
     color: "transparent"
 
     onClosing: (close) => {
-        // Keep importing in the background instead of quitting -- the
-        // tray icon (main.py) is the only way to actually quit.
+        // Keep importing in the background; only the tray quits.
         close.accepted = false
         window.hide()
     }
 
+    SessionListModel { id: sessionModel }
+    SourceListModel { id: sourcesModel }
+    AppController {
+        id: appController
+        sessionModel: sessionModel
+        sourcesModel: sourcesModel
+    }
+
+    function showWindow() {
+        window.show()
+        window.raise()
+        window.requestActivate()
+    }
+
     Component.onCompleted: {
+        appController.start()
         Theme.mode = appController.getSetting("theme_mode")
         Theme.systemPrefersDark = appController.systemPrefersDark
-        Theme.systemAccent = Qt.binding(() => appController.theme.accent)
-        Theme.custom = Qt.binding(() => appController.theme.custom)
+        Theme.systemAccent = Qt.binding(() => appController.themeAccent)
+        Theme.custom = Qt.binding(() => appController.themeCustom)
     }
 
     Connections {
@@ -40,10 +51,9 @@ Window {
         function onSystemPrefersDarkChanged() { Theme.systemPrefersDark = appController.systemPrefersDark }
         function onNavigateToSession(sessionId, deviceLabel) {
             detailPopup.openForSession(sessionId, deviceLabel)
-            window.show()
-            window.raise()
-            window.requestActivate()
+            window.showWindow()
         }
+        function onShowRequested() { window.showWindow() }
         function onToast(message) { toast.show(message) }
     }
 

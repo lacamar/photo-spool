@@ -1,0 +1,29 @@
+[package]
+name = "photo-spool"
+version = "0.6.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[dependencies]
+anyhow = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+cxx = "1.0.205"
+cxx-qt = "0.10.0"
+cxx-qt-lib = { version = "0.10.0", features = ["qt_gui", "qt_qml"] }
+ksni = { version = "0.3.7", default-features = false, features = ["blocking", "async-io"] }
+libc = "0.2"
+log = "0.4"
+mdns-sd = "0.21.7"
+plist = "1.10.3"
+rusqlite = "0.41"
+serde_json = "1"
+sha2 = "0.10"
+signal-hook = "0.4.6"
+zbus = "5"
+
+[profile.release]
+lto = "thin"
+
+[build-dependencies]
+cxx-qt-build = "0.10.0"

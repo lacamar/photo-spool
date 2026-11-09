@@ -1,16 +1,17 @@
 default: run
 
 run:
-    python3 main.py
+    cargo run --release
 
 demo:
-    python3 main.py --demo
+    cargo run --release -- --demo
 
 test:
-    python3 -m unittest discover -s tests -v
+    cargo test
 
 clean-db:
     rm -f "${XDG_DATA_HOME:-$HOME/.local/share}/photo-spool/data.db"
 
 lint:
-    ruff check .
+    cargo clippy --all-targets
+    cargo fmt --check

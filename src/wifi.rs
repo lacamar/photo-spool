@@ -62,6 +62,17 @@ fn mounted(mp: &Path) -> bool {
     })
 }
 
+/// An ifuse mount whose AFC connection dropped (phone locked/asleep) stays in the mount table
+/// but fails every access with EIO/ENOTCONN. A slow reply is not treated as dead.
+fn dead(mp: &Path) -> bool {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let path = mp.to_path_buf();
+    std::thread::spawn(move || {
+        let _ = tx.send(std::fs::read_dir(path).err());
+    });
+    matches!(rx.recv_timeout(Duration::from_secs(3)), Ok(Some(_)))
+}
+
 type Devices = Arc<Mutex<HashMap<String, Addr>>>;
 
 struct Muxer {
@@ -315,7 +326,11 @@ impl WifiIphones {
         let mut live = HashMap::new();
         for udid in wanted.keys().filter(|u| !self.ejected.contains(*u)) {
             let mp = mountpoint(udid);
-            if mounted(&mp) {
+            if mounted(&mp) && dead(&mp) {
+                log::warn!("Wi-Fi mount for {udid} stopped responding; remounting");
+                unmount(udid);
+                self.mount_attempts.insert(udid.clone(), Instant::now());
+            } else if mounted(&mp) {
                 live.insert(udid.clone(), mp);
             } else if self
                 .mount_attempts
@@ -434,6 +449,12 @@ mod tests {
         assert_eq!(v6.len(), 28);
         assert_eq!(&v6[..2], &(libc::AF_INET6 as u16).to_ne_bytes());
         assert_eq!(&v6[24..], &3u32.to_ne_bytes());
+    }
+
+    #[test]
+    fn dead_mount_detection() {
+        assert!(!dead(&std::env::temp_dir()));
+        assert!(dead(Path::new("/nonexistent/photo-spool-mount")));
     }
 
     #[test]

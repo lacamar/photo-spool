@@ -2,6 +2,7 @@ mod converter;
 mod db;
 mod desktop;
 mod devices;
+mod heartbeat;
 mod import;
 mod paths;
 mod qt;

@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 use mdns_sd::{ServiceDaemon, ServiceEvent};
 use plist::{Dictionary, Value};
 
+use crate::heartbeat::Heartbeat;
 use crate::{paths, util};
 
 const SERVICE_TYPE: &str = "_apple-mobdev2._tcp.local.";
@@ -218,6 +219,7 @@ pub struct WifiIphones {
     map_file: PathBuf,
     daemon: Option<ServiceDaemon>,
     muxer: Option<Muxer>,
+    heartbeats: HashMap<String, Heartbeat>,
 }
 
 impl WifiIphones {
@@ -231,6 +233,7 @@ impl WifiIphones {
             map_file: paths::data_home().join("wifi-iphones.json"),
             daemon: None,
             muxer: None,
+            heartbeats: HashMap::new(),
         };
         let started = Muxer::start(runtime_dir().join("usbmuxd.sock"), me.devices.clone())
             .map_err(|e| e.to_string())
@@ -322,6 +325,15 @@ impl WifiIphones {
             unmount(&udid);
         }
         self.ejected.retain(|u| wanted.contains_key(u));
+        self.heartbeats
+            .retain(|u, hb| wanted.get(u) == Some(&hb.addr) && !self.ejected.contains(u));
+        for (udid, addr) in &wanted {
+            if !self.ejected.contains(udid) && !self.heartbeats.contains_key(udid) {
+                let record = Path::new(LOCKDOWN_DIR).join(format!("{udid}.plist"));
+                self.heartbeats
+                    .insert(udid.clone(), Heartbeat::start(record, *addr));
+            }
+        }
 
         let mut live = HashMap::new();
         for udid in wanted.keys().filter(|u| !self.ejected.contains(*u)) {
@@ -332,10 +344,11 @@ impl WifiIphones {
                 self.mount_attempts.insert(udid.clone(), Instant::now());
             } else if mounted(&mp) {
                 live.insert(udid.clone(), mp);
-            } else if self
-                .mount_attempts
-                .get(udid)
-                .is_none_or(|t| t.elapsed() >= MOUNT_RETRY)
+            } else if self.heartbeats.get(udid).is_some_and(Heartbeat::alive)
+                && self
+                    .mount_attempts
+                    .get(udid)
+                    .is_none_or(|t| t.elapsed() >= MOUNT_RETRY)
             {
                 self.mount_attempts.insert(udid.clone(), Instant::now());
                 self.mount(udid, &mp);

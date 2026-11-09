@@ -41,8 +41,9 @@ Rust backend + unchanged QML UI via **cxx-qt**. `just run | demo | test | lint |
 - `iphone` is a display-only source kind; sessions record `mtp` (`sessions.kind` CHECK constraint).
 - Migrations in `db.rs` are append-only.
 - Model role `rootPath`, never `root`: delegate roles shadow `id: root` silently (stderr-only TypeError).
-- iPhone over Wi-Fi: live-tested on iOS 26.7.2 over the phone's hotspot; lockdown works but `com.apple.afc`
-  refuses connections; untested on a shared LAN.
+- iPhone over Wi-Fi needs the `heartbeat` session (Marco/Polo over lockdown TLS) per phone: without it iOS
+  drops AFC within seconds and `ifuse` mounts fail with EIO. Mount only once the heartbeat is alive; dead
+  mounts are detected and remounted. Live-tested on iOS 26.7.2 over the phone's hotspot.
 
 ## Testing
 

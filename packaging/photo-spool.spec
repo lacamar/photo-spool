@@ -1,5 +1,5 @@
 Name:           photo-spool
-Version:        0.6.1
+Version:        0.6.2
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -117,6 +117,9 @@ done
 %{_userunitdir}/%{name}.service
 
 %changelog
+* Mon Nov 09 2026 Photo Spool <noreply@example.com> - 0.6.2-1
+- Fix dark theme (interpret QML, as before)
+
 * Mon Nov 09 2026 Photo Spool <noreply@example.com> - 0.6.1-1
 - D-Bus call timeouts (hung portal blocked startup)
 

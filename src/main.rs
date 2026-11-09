@@ -110,6 +110,8 @@ fn main() {
     for (k, v) in [
         ("QT_QPA_PLATFORM", "wayland"),
         ("QT_QUICK_CONTROLS_STYLE", "Basic"),
+        // interpret QML from source: the ahead-of-time compiled Theme.qml leaves `base` undefined in dark mode
+        ("QML_DISABLE_DISK_CACHE", "1"),
     ] {
         if std::env::var_os(k).is_none() {
             // SAFETY: single-threaded at this point

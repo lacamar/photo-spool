@@ -54,8 +54,12 @@ exiftool.
 Never run the app against real XDG paths, `$HOME` or attached hardware: the device watcher talks to the real
 system bus and auto-mounts/auto-imports cards. Manual runs use scratch `XDG_*`, `TMPDIR` and
 `XDG_RUNTIME_DIR` (keep paths short: the instance socket needs < 108 chars), `QT_QPA_PLATFORM=offscreen`,
-and both `DBUS_*_BUS_ADDRESS` pointed at a dead socket. For interactive checks, ask the user to run it and
-paste stderr; QML errors only show on stderr.
+and both `DBUS_*_BUS_ADDRESS` pointed at a dead socket. A run sharing the real `XDG_RUNTIME_DIR` steals and
+then deletes the live service's usbmuxd socket. Qt logs QML errors to the journal, not stderr, unless stderr
+is a terminal: check `journalctl --user` after any non-interactive run.
+
+`main.rs` sets `QML_DISABLE_DISK_CACHE=1`: the ahead-of-time compiled QML breaks `Theme.qml` (dark-mode `base`
+is undefined), so QML runs interpreted from the embedded sources, as it did under PySide6.
 
 ## Packaging
 

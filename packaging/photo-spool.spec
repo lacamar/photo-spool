@@ -1,5 +1,5 @@
 Name:           photo-spool
-Version:        0.6.4
+Version:        0.6.5
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -117,6 +117,9 @@ done
 %{_userunitdir}/%{name}.service
 
 %changelog
+* Mon Nov 09 2026 Photo Spool <noreply@example.com> - 0.6.5-1
+- Skip files that vanish mid-scan
+
 * Mon Nov 09 2026 Photo Spool <noreply@example.com> - 0.6.4-1
 - Wi-Fi iPhone heartbeat (iOS dropped AFC without it)
 

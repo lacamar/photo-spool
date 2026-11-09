@@ -421,3 +421,39 @@ fn worker_thread_pauses_and_stops() {
     ));
     w.stop();
 }
+
+#[test]
+fn file_vanishing_mid_scan_is_skipped_not_failed() {
+    let env = Env::new();
+    let transient = env.write("IMG_0001D.DNG", b"transient");
+    env.write("IMG_0002.mov", b"kept");
+    // exiftool wrapper deletes the transient file first, as iOS does mid-scan
+    let wrapper = env.dnglab.with_file_name("exiftool");
+    let real = util::which("exiftool").unwrap();
+    std::fs::write(
+        &wrapper,
+        format!(
+            "#!/bin/sh\nrm -f '{}'\nexec '{}' \"$@\"\n",
+            lossy(&transient),
+            lossy(&real)
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(
+        &wrapper,
+        std::os::unix::fs::PermissionsExt::from_mode(0o755),
+    )
+    .unwrap();
+    let old_path = std::env::var("PATH").unwrap();
+    // SAFETY: Isolated holds the env lock for this test
+    unsafe {
+        std::env::set_var(
+            "PATH",
+            format!("{}:{old_path}", lossy(wrapper.parent().unwrap())),
+        )
+    };
+    let id = env.run(None, false);
+    unsafe { std::env::set_var("PATH", old_path) };
+    assert_eq!(env.counts(id), ("completed".into(), 1, 0, 0));
+    assert_eq!(env.file_rows(id).len(), 1);
+}

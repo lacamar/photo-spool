@@ -252,6 +252,10 @@ impl Pipeline {
             self.progress(session_id, PHASE_CHECKING, i + 1, files.len(), &name);
             let order = i as i64;
             let Some(cand) = metadata.get(f) else {
+                // iOS swaps transient "IMG_1234D" files for the final shot mid-scan
+                if !f.exists() {
+                    continue;
+                }
                 record_file(
                     conn,
                     session_id,
@@ -287,6 +291,9 @@ impl Pipeline {
             };
             let (source_hash, staged_path) = match staged {
                 Ok(s) => s,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound && !cand.path.exists() => {
+                    continue;
+                }
                 Err(e) => {
                     record_file(conn, session_id, &name, "failed", "", &e.to_string(), order)?;
                     continue;

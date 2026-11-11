@@ -51,7 +51,7 @@ impl Env {
         let (tx, rx) = mpsc::channel();
         let tx = Mutex::new(tx);
         let p = Pipeline::for_test(move |e| tx.lock().unwrap().send(e).unwrap(), dnglab);
-        p.run_session(&self.conn, &req).unwrap();
+        p.run_session(&self.conn, &req);
         drop(p);
         let events: Vec<Event> = Receiver::iter(&rx).collect();
         let id = self
@@ -456,4 +456,51 @@ fn file_vanishing_mid_scan_is_skipped_not_failed() {
     unsafe { std::env::set_var("PATH", old_path) };
     assert_eq!(env.counts(id), ("completed".into(), 1, 0, 0));
     assert_eq!(env.file_rows(id).len(), 1);
+}
+
+#[test]
+fn session_error_marks_failed_and_still_finishes() {
+    let env = Env::new();
+    env.write("clip.mov", b"bytes");
+    // staging dir path occupied by a file: creating the session's staging dirs fails
+    std::fs::write(paths::staging_dir(), b"").unwrap();
+    let req = ImportRequest {
+        source_root: lossy(&env.card),
+        device_label: "T".into(),
+        kind: "manual".into(),
+        ..Default::default()
+    };
+    let (id, events) = env.run_with(req, Some(env.dnglab.clone()));
+    let (status, err): (String, String) = env
+        .conn
+        .query_row(
+            "SELECT status, error_message FROM sessions WHERE id = ?",
+            [id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(status, "failed");
+    assert!(!err.is_empty());
+    assert_eq!(events.last(), Some(&Event::Finished(id)));
+}
+
+#[test]
+fn stop_cancels_running_session() {
+    let env = Env::new();
+    env.write("clip.mov", b"bytes");
+    let p = Pipeline::for_test(|_| {}, Some(env.dnglab.clone()));
+    p.pause.state.lock().unwrap().stopping = true;
+    let req = ImportRequest {
+        source_root: lossy(&env.card),
+        device_label: "T".into(),
+        kind: "manual".into(),
+        ..Default::default()
+    };
+    p.run_session(&env.conn, &req);
+    let status: String = env
+        .conn
+        .query_row("SELECT status FROM sessions", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(status, "cancelled");
+    assert!(env.staging_entries().is_empty());
 }

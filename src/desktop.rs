@@ -136,7 +136,8 @@ impl Notifier {
 #[derive(Default)]
 pub struct Inhibitor {
     count: u32,
-    request: Option<OwnedObjectPath>,
+    /// The portal drops an inhibit when its sender disconnects: the connection lives as long as it.
+    request: Option<(Connection, OwnedObjectPath)>,
 }
 
 impl Inhibitor {
@@ -148,15 +149,17 @@ impl Inhibitor {
         const SUSPEND_AND_IDLE: u32 = 4 | 8;
         let options = HashMap::from([("reason", Value::from("Importing photos"))]);
         let result = session().ok_or(zbus::Error::Unsupported).and_then(|c| {
-            c.call_method(
-                Some(PORTAL.0),
-                PORTAL.1,
-                Some("org.freedesktop.portal.Inhibit"),
-                "Inhibit",
-                &("", SUSPEND_AND_IDLE, options),
-            )?
-            .body()
-            .deserialize::<OwnedObjectPath>()
+            let path = c
+                .call_method(
+                    Some(PORTAL.0),
+                    PORTAL.1,
+                    Some("org.freedesktop.portal.Inhibit"),
+                    "Inhibit",
+                    &("", SUSPEND_AND_IDLE, options),
+                )?
+                .body()
+                .deserialize::<OwnedObjectPath>()?;
+            Ok((c, path))
         });
         match result {
             Ok(p) => self.request = Some(p),
@@ -169,18 +172,16 @@ impl Inhibitor {
         if self.count > 0 {
             return;
         }
-        let Some(path) = self.request.take() else {
+        let Some((c, path)) = self.request.take() else {
             return;
         };
-        if let Some(c) = session()
-            && let Err(e) = c.call_method(
-                Some(PORTAL.0),
-                path.as_str(),
-                Some("org.freedesktop.portal.Request"),
-                "Close",
-                &(),
-            )
-        {
+        if let Err(e) = c.call_method(
+            Some(PORTAL.0),
+            path.as_str(),
+            Some("org.freedesktop.portal.Request"),
+            "Close",
+            &(),
+        ) {
             log::info!("Could not release idle/suspend inhibit: {e}");
         }
     }

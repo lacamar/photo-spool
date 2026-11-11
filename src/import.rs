@@ -66,13 +66,26 @@ struct Pause {
 }
 
 impl Pause {
-    fn wait(&self) {
+    /// Blocks while paused; false once shutdown has been requested.
+    fn wait(&self) -> bool {
         let mut s = self.state.lock().unwrap();
         while s.paused && !s.stopping {
             s = self.cond.wait(s).unwrap();
         }
+        !s.stopping
     }
 }
+
+#[derive(Debug)]
+struct Cancelled;
+
+impl std::fmt::Display for Cancelled {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Import was interrupted (app quit)")
+    }
+}
+
+impl std::error::Error for Cancelled {}
 
 pub struct Pipeline {
     emit: Box<dyn Fn(Event) + Send>,
@@ -151,11 +164,12 @@ impl Pipeline {
             Ok(c) => c,
             Err(e) => return log::error!("import worker: cannot open DB: {e}"),
         };
+        // queued requests are dropped on shutdown; a cancelled session stops at its next checkpoint
         while let Ok(Msg::Run(request)) = rx.recv() {
-            self.pause.wait();
-            if let Err(e) = self.run_session(&conn, &request) {
-                log::error!("Import session failed: {e}");
+            if !self.pause.wait() {
+                break;
             }
+            self.run_session(&conn, &request);
         }
     }
 
@@ -176,7 +190,36 @@ impl Pipeline {
         });
     }
 
-    pub fn run_session(&self, conn: &Connection, request: &ImportRequest) -> anyhow::Result<()> {
+    fn checkpoint(&self) -> anyhow::Result<()> {
+        if self.pause.wait() {
+            Ok(())
+        } else {
+            Err(Cancelled.into())
+        }
+    }
+
+    /// Always ends the session row (never left 'running') and drops its staging dir.
+    pub fn run_session(&self, conn: &Connection, request: &ImportRequest) {
+        let session_id = match self.start_session(conn, request) {
+            Ok(id) => id,
+            Err(e) => return log::error!("Could not start import session: {e}"),
+        };
+        let Err(e) = self.session_body(conn, request, session_id) else {
+            return;
+        };
+        let _ = std::fs::remove_dir_all(paths::staging_dir().join(format!("session-{session_id}")));
+        let status = if e.is::<Cancelled>() {
+            "cancelled"
+        } else {
+            "failed"
+        };
+        log::error!("Import session {session_id} {status}: {e:#}");
+        if let Err(e) = self.finish(conn, session_id, status, &format!("{e:#}"), "") {
+            log::error!("Could not record session {session_id} as {status}: {e}");
+        }
+    }
+
+    fn start_session(&self, conn: &Connection, request: &ImportRequest) -> anyhow::Result<i64> {
         conn.execute(
             "INSERT INTO sessions (started_at, device_label, source_root, kind, status, mark_only) \
              VALUES (?, ?, ?, ?, 'running', ?)",
@@ -190,7 +233,15 @@ impl Pipeline {
         )?;
         let session_id = conn.last_insert_rowid();
         (self.emit)(Event::Started(session_id));
+        Ok(session_id)
+    }
 
+    fn session_body(
+        &self,
+        conn: &Connection,
+        request: &ImportRequest,
+        session_id: i64,
+    ) -> anyhow::Result<()> {
         let settings = db::all_settings(conn)?;
         let library_root = PathBuf::from(db::str_or(settings.get("library_root"), ""));
         let root = request.source_root.as_str();
@@ -247,7 +298,7 @@ impl Pipeline {
         let mut intra_batch_duplicates: Vec<(String, String, i64)> = Vec::new();
 
         for (i, f) in files.iter().enumerate() {
-            self.pause.wait();
+            self.checkpoint()?;
             let name = file_name(f);
             self.progress(session_id, PHASE_CHECKING, i + 1, files.len(), &name);
             let order = i as i64;
@@ -321,7 +372,7 @@ impl Pipeline {
         if request.mark_only {
             let now = db::now_utc();
             for (source_hash, cand, order, _) in &to_stage {
-                self.pause.wait();
+                self.checkpoint()?;
                 let name = file_name(&cand.path);
                 self.progress(
                     session_id,
@@ -372,7 +423,7 @@ impl Pipeline {
         let mut tail = String::new();
         let mut convert_failures: Vec<(String, i64, String)> = Vec::new();
         if !to_convert.is_empty() {
-            self.pause.wait();
+            self.checkpoint()?;
             self.progress(session_id, PHASE_CONVERTING, 0, to_convert.len(), "");
             let mut done = 0;
             let result = converter::convert_batch(
@@ -424,7 +475,7 @@ impl Pipeline {
         };
 
         for (source_hash, cand, order) in &to_convert {
-            self.pause.wait();
+            self.checkpoint()?;
             let converted = staging_out.join(format!("{source_hash}.dng"));
             if !converted.is_file() {
                 placer.placed += 1;
@@ -455,7 +506,7 @@ impl Pipeline {
             placer.place(cand, *order, source_hash, &converted, true)?;
         }
         for (source_hash, cand, order, staged) in &to_copy {
-            self.pause.wait();
+            self.checkpoint()?;
             placer.place(cand, *order, source_hash, staged, false)?;
         }
         for (source_hash, name, order) in &intra_batch_duplicates {
@@ -483,11 +534,13 @@ impl Pipeline {
         error: &str,
         ejectable: &str,
     ) -> anyhow::Result<()> {
-        conn.execute(
+        let updated = conn.execute(
             "UPDATE sessions SET status = ?, finished_at = ?, error_message = ?, ejectable_path = ? WHERE id = ?",
             params![status, db::now_utc(), error, ejectable, session_id],
-        )?;
+        );
+        // emitted regardless: the controller's in-flight/inhibit bookkeeping depends on it
         (self.emit)(Event::Finished(session_id));
+        updated?;
         Ok(())
     }
 }
@@ -528,11 +581,12 @@ impl Placer<'_> {
         self.pipeline
             .progress(session_id, PHASE_PLACING, self.placed, self.total, &name);
         let dest_suffix = util::suffix(produced).to_lowercase();
-        let dest = converter::unique_dest_path(converter::library_dest_path(
-            self.library_root,
-            cand,
-            &dest_suffix,
-        )?);
+        let dest = match converter::library_dest_path(self.library_root, cand, &dest_suffix) {
+            Ok(d) => converter::unique_dest_path(d),
+            Err(e) => {
+                return record_file(conn, session_id, &name, "failed", "", &e.to_string(), order);
+            }
+        };
         let moved = dest
             .parent()
             .map_or(Ok(()), std::fs::create_dir_all)
@@ -546,7 +600,7 @@ impl Placer<'_> {
         } else if cand.camera_model_inferred && scanner::is_video(&dest) {
             converter::set_camera_model(&dest, &cand.camera_model);
         }
-        let dest_bytes = dest.metadata()?.len() as i64;
+        let dest_bytes = dest.metadata().map_or(0, |m| m.len() as i64);
         let dest_str = lossy(&dest);
         let inserted = conn.execute(
             "INSERT INTO imports (source_hash, source_filename, source_bytes, camera_model, \

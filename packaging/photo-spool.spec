@@ -1,5 +1,5 @@
 Name:           photo-spool
-Version:        0.6.5
+Version:        0.6.6
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -26,6 +26,7 @@ BuildRequires:  perl-Image-ExifTool
 BuildRequires:  ffmpeg-free
 
 Requires:       qt6-qtdeclarative
+Requires:       qt6-qtwayland
 Requires:       glib2
 Requires:       udisks2
 Requires:       dnglab
@@ -117,6 +118,15 @@ done
 %{_userunitdir}/%{name}.service
 
 %changelog
+* Wed Nov 11 2026 Photo Spool <noreply@example.com> - 0.6.6-1
+- Never leave sessions stuck running
+- Cancel imports on quit
+- Hold suspend inhibit for the whole import
+- Device polling off the GUI thread
+- Pin iPhone cert, cap frames, write timeouts
+- Keep Wi-Fi source across remounts
+- Require qt6-qtwayland
+
 * Mon Nov 09 2026 Photo Spool <noreply@example.com> - 0.6.5-1
 - Skip files that vanish mid-scan
 

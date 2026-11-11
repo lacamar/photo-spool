@@ -477,6 +477,13 @@ impl DeviceWatcher {
         let wifi_mounts = self.wifi.as_mut().map(|w| w.poll(&usb)).unwrap_or_default();
         for (udid, mountpoint) in wifi_mounts {
             let key = format!("wifi:{udid}");
+            // a remounting phone keeps its source (no remove/re-add, no repeat auto-import)
+            let Some(mountpoint) = mountpoint else {
+                if self.sources.contains_key(&key) {
+                    current.insert(key);
+                }
+                continue;
+            };
             current.insert(key.clone());
             if !self.sources.contains_key(&key) {
                 let root = narrow_iphone_root(&util::lossy(&mountpoint));

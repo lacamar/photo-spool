@@ -63,15 +63,39 @@ fn mounted(mp: &Path) -> bool {
     })
 }
 
-/// An ifuse mount whose AFC connection dropped (phone locked/asleep) stays in the mount table
-/// but fails every access with EIO/ENOTCONN. A slow reply is not treated as dead.
-fn dead(mp: &Path) -> bool {
-    let (tx, rx) = std::sync::mpsc::channel();
-    let path = mp.to_path_buf();
-    std::thread::spawn(move || {
-        let _ = tx.send(std::fs::read_dir(path).err());
-    });
-    matches!(rx.recv_timeout(Duration::from_secs(3)), Ok(Some(_)))
+const PROBE_HANG: Duration = Duration::from_secs(10);
+
+/// Liveness probe of an ifuse mount, read on later polls. A dropped AFC connection (phone
+/// locked/asleep) leaves the mount listed but failing with EIO/ENOTCONN, or hanging.
+/// One probe thread at a time per mount, so a hung mount costs one thread, not one per tick.
+struct Probe {
+    rx: std::sync::mpsc::Receiver<bool>,
+    started: Instant,
+}
+
+impl Probe {
+    fn start(mp: &Path) -> Self {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let path = mp.to_path_buf();
+        std::thread::spawn(move || {
+            let _ = tx.send(std::fs::read_dir(path).is_err());
+        });
+        Self {
+            rx,
+            started: Instant::now(),
+        }
+    }
+
+    /// Some(dead) once known; None while still pending.
+    fn verdict(&self) -> Option<bool> {
+        match self.rx.try_recv() {
+            Ok(failed) => Some(failed),
+            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                (self.started.elapsed() > PROBE_HANG).then_some(true)
+            }
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => Some(false),
+        }
+    }
 }
 
 type Devices = Arc<Mutex<HashMap<String, Addr>>>;
@@ -184,6 +208,9 @@ fn serve(mut conn: UnixStream, devices: &Devices) {
         }
         let word = |i: usize| u32::from_le_bytes(header[i * 4..i * 4 + 4].try_into().unwrap());
         let (length, tag) = (word(0) as usize, word(3));
+        if length > 1 << 20 {
+            return;
+        }
         let mut body = vec![0; length.saturating_sub(16)];
         if conn.read_exact(&mut body).is_err() {
             return;
@@ -220,6 +247,7 @@ pub struct WifiIphones {
     daemon: Option<ServiceDaemon>,
     muxer: Option<Muxer>,
     heartbeats: HashMap<String, Heartbeat>,
+    probes: HashMap<String, Probe>,
 }
 
 impl WifiIphones {
@@ -234,6 +262,7 @@ impl WifiIphones {
             daemon: None,
             muxer: None,
             heartbeats: HashMap::new(),
+            probes: HashMap::new(),
         };
         let started = Muxer::start(runtime_dir().join("usbmuxd.sock"), me.devices.clone())
             .map_err(|e| e.to_string())
@@ -291,8 +320,9 @@ impl WifiIphones {
         }
     }
 
-    /// Mounts discovered phones that aren't on USB; returns udid -> mountpoint for live mounts.
-    pub fn poll(&mut self, usb_udids: &HashSet<String>) -> HashMap<String, PathBuf> {
+    /// Mounts discovered phones that aren't on USB. Returns every wanted phone: Some(mountpoint)
+    /// when mounted, None while it is (re)mounting, so its source survives a remount.
+    pub fn poll(&mut self, usb_udids: &HashSet<String>) -> HashMap<String, Option<PathBuf>> {
         for udid in usb_udids {
             if self.learned.insert(udid.clone()) {
                 self.learn(udid);
@@ -338,12 +368,26 @@ impl WifiIphones {
         let mut live = HashMap::new();
         for udid in wanted.keys().filter(|u| !self.ejected.contains(*u)) {
             let mp = mountpoint(udid);
-            if mounted(&mp) && dead(&mp) {
+            let is_mounted = mounted(&mp);
+            let verdict = match self.probes.get(udid) {
+                Some(p) if is_mounted => p.verdict(),
+                _ => Some(false),
+            };
+            if verdict.is_some() {
+                self.probes.remove(udid);
+            }
+            if is_mounted && verdict.is_none_or(|dead| !dead) {
+                self.probes
+                    .entry(udid.clone())
+                    .or_insert_with(|| Probe::start(&mp));
+            }
+            live.insert(udid.clone(), None);
+            if is_mounted && verdict == Some(true) {
                 log::warn!("Wi-Fi mount for {udid} stopped responding; remounting");
                 unmount(udid);
                 self.mount_attempts.insert(udid.clone(), Instant::now());
-            } else if mounted(&mp) {
-                live.insert(udid.clone(), mp);
+            } else if is_mounted {
+                live.insert(udid.clone(), Some(mp));
             } else if self.heartbeats.get(udid).is_some_and(Heartbeat::alive)
                 && self
                     .mount_attempts
@@ -465,9 +509,17 @@ mod tests {
     }
 
     #[test]
-    fn dead_mount_detection() {
-        assert!(!dead(&std::env::temp_dir()));
-        assert!(dead(Path::new("/nonexistent/photo-spool-mount")));
+    fn mount_probe_verdicts() {
+        let wait = |p: Probe| loop {
+            if let Some(v) = p.verdict() {
+                return v;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        assert!(!wait(Probe::start(&std::env::temp_dir())));
+        assert!(wait(Probe::start(Path::new(
+            "/nonexistent/photo-spool-mount"
+        ))));
     }
 
     #[test]

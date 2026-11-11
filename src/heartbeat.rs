@@ -17,6 +17,7 @@ use rustls::{ClientConfig, ClientConnection, DigitallySignedStruct, SignatureSch
 const LOCKDOWN_PORT: u16 = 62078;
 const IO_TIMEOUT: Duration = Duration::from_secs(40);
 const RETRY: Duration = Duration::from_secs(5);
+const MAX_FRAME: usize = 1 << 20;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -34,7 +35,11 @@ fn send(s: &mut dyn Stream, msg: Dictionary) -> Result<()> {
 fn recv(s: &mut dyn Stream) -> Result<Dictionary> {
     let mut len = [0u8; 4];
     s.read_exact(&mut len)?;
-    let mut body = vec![0; u32::from_be_bytes(len) as usize];
+    let len = u32::from_be_bytes(len) as usize;
+    if len > MAX_FRAME {
+        return Err(format!("oversized frame: {len} bytes").into());
+    }
+    let mut body = vec![0; len];
     s.read_exact(&mut body)?;
     Ok(plist::from_bytes(&body)?)
 }
@@ -43,20 +48,29 @@ fn dict<const N: usize>(pairs: [(&str, Value); N]) -> Dictionary {
     pairs.into_iter().map(|(k, v)| (k.to_string(), v)).collect()
 }
 
-/// The device's certificate is self-signed by its pairing root; trust comes from the pair record.
+/// Trust is the pair record: the phone must present exactly its recorded DeviceCertificate.
 #[derive(Debug)]
-struct PairedDevice(Arc<rustls::crypto::CryptoProvider>);
+struct PairedDevice {
+    provider: Arc<rustls::crypto::CryptoProvider>,
+    device_cert: CertificateDer<'static>,
+}
 
 impl ServerCertVerifier for PairedDevice {
     fn verify_server_cert(
         &self,
-        _: &CertificateDer<'_>,
+        end_entity: &CertificateDer<'_>,
         _: &[CertificateDer<'_>],
         _: &ServerName<'_>,
         _: &[u8],
         _: UnixTime,
     ) -> std::result::Result<ServerCertVerified, rustls::Error> {
-        Ok(ServerCertVerified::assertion())
+        if end_entity.as_ref() == self.device_cert.as_ref() {
+            Ok(ServerCertVerified::assertion())
+        } else {
+            Err(rustls::Error::InvalidCertificate(
+                rustls::CertificateError::UnknownIssuer,
+            ))
+        }
     }
 
     fn verify_tls12_signature(
@@ -69,7 +83,7 @@ impl ServerCertVerifier for PairedDevice {
             msg,
             cert,
             dss,
-            &self.0.signature_verification_algorithms,
+            &self.provider.signature_verification_algorithms,
         )
     }
 
@@ -83,12 +97,14 @@ impl ServerCertVerifier for PairedDevice {
             msg,
             cert,
             dss,
-            &self.0.signature_verification_algorithms,
+            &self.provider.signature_verification_algorithms,
         )
     }
 
     fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
-        self.0.signature_verification_algorithms.supported_schemes()
+        self.provider
+            .signature_verification_algorithms
+            .supported_schemes()
     }
 }
 
@@ -116,7 +132,10 @@ fn load_pairing(record: &Path) -> Result<Pairing> {
     let tls = ClientConfig::builder_with_provider(provider.clone())
         .with_safe_default_protocol_versions()?
         .dangerous()
-        .with_custom_certificate_verifier(Arc::new(PairedDevice(provider)))
+        .with_custom_certificate_verifier(Arc::new(PairedDevice {
+            provider,
+            device_cert: CertificateDer::from_pem_slice(data("DeviceCertificate")?)?,
+        }))
         .with_client_auth_cert(vec![cert], key)?;
     Ok(Pairing {
         host_id: string("HostID")?,
@@ -137,6 +156,7 @@ fn connect(ip: IpAddr, scope: u32, port: u16) -> Result<TcpStream> {
     };
     let s = TcpStream::connect_timeout(&addr, Duration::from_secs(10))?;
     s.set_read_timeout(Some(IO_TIMEOUT))?;
+    s.set_write_timeout(Some(IO_TIMEOUT))?;
     Ok(s)
 }
 

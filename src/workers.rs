@@ -142,7 +142,7 @@ fn disk_usage(root: &str) -> Option<(u64, u64, u64)> {
     let f = s.f_frsize as u64;
     Some((
         s.f_blocks as u64 * f,
-        (s.f_blocks - s.f_bfree) as u64 * f,
+        (s.f_blocks.saturating_sub(s.f_bfree)) as u64 * f,
         s.f_bavail as u64 * f,
     ))
 }

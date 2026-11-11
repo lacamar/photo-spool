@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::process::Command;
 use std::sync::mpsc::{self, RecvTimeoutError};
-use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime};
 
@@ -26,8 +25,7 @@ use crate::{db, paths, scanner, util};
 type Qt = CxxQtThread<AppController>;
 
 struct Runtime {
-    watcher: Arc<Mutex<DeviceWatcher>>,
-    watcher_stop: mpsc::Sender<()>,
+    watcher: mpsc::Sender<WatchCmd>,
     watcher_thread: Option<JoinHandle<()>>,
     import: ImportWorker,
     preview: PreviewWorker,
@@ -39,11 +37,10 @@ struct Runtime {
 
 impl Drop for Runtime {
     fn drop(&mut self) {
-        let _ = self.watcher_stop.send(());
+        let _ = self.watcher.send(WatchCmd::Stop);
         if let Some(t) = self.watcher_thread.take() {
             let _ = t.join();
         }
-        self.watcher.lock().unwrap().stop();
         self.import.stop();
         self.preview.stop();
         self.stats.stop();
@@ -272,36 +269,10 @@ impl AppController {
         let mtp_enabled = self
             .db()
             .is_none_or(|c| db::truthy(Some(&db::get_setting(c, "mtp_enabled"))));
-        let watcher = {
-            let qt = qt.clone();
-            Arc::new(Mutex::new(DeviceWatcher::new(mtp_enabled, move |ev| {
-                queue(&qt, move |c| c.on_device_event(ev))
-            })))
-        };
-        let (watcher_stop, stop_rx) = mpsc::channel::<()>();
+        let (watcher, cmds) = mpsc::channel::<WatchCmd>();
         let watcher_thread = {
-            let watcher = watcher.clone();
             let qt = qt.clone();
-            std::thread::spawn(move || {
-                let mut theme = theme_stamp();
-                loop {
-                    watcher.lock().unwrap().poll();
-                    // ponytail: theme.json polled on the device tick; inotify if 2.5s lag ever matters
-                    let now = theme_stamp();
-                    if now != theme {
-                        theme = now;
-                        let custom = load_theme_json();
-                        queue(&qt, move |mut c| {
-                            c.as_mut().rust_mut().theme_custom = to_qvariant(&custom);
-                            c.palette_changed();
-                        });
-                    }
-                    match stop_rx.recv_timeout(devices::POLL_INTERVAL) {
-                        Err(RecvTimeoutError::Timeout) => {}
-                        _ => return,
-                    }
-                }
-            })
+            std::thread::spawn(move || run_watcher(&qt, mtp_enabled, &cmds))
         };
 
         let tray = Tray { qt: qt.clone() }
@@ -313,7 +284,6 @@ impl AppController {
 
         self.as_mut().rust_mut().rt = Some(Runtime {
             watcher,
-            watcher_stop,
             watcher_thread: Some(watcher_thread),
             import,
             preview,
@@ -366,7 +336,7 @@ impl AppController {
 
     pub fn refresh_devices(self: Pin<&mut Self>) {
         let Some(rt) = &self.rt else { return };
-        rt.watcher.lock().unwrap().poll();
+        let _ = rt.watcher.send(WatchCmd::Poll);
         // poll only reports changes; a mounted card may still have new photos
         for e in self.source_entries() {
             let root = e["rootPath"].as_str().unwrap_or("");
@@ -712,12 +682,8 @@ impl AppController {
             let label = e["label"].as_str().unwrap_or("");
             return self.emit_toast(&format!("{label} is still importing."));
         }
-        let ok = self
-            .rt
-            .as_ref()
-            .is_some_and(|rt| rt.watcher.lock().unwrap().eject(&root));
-        if !ok {
-            self.emit_toast("Could not eject -- it may still be in use.");
+        if let Some(rt) = &self.rt {
+            let _ = rt.watcher.send(WatchCmd::Eject(root));
         }
     }
 
@@ -737,7 +703,11 @@ impl AppController {
     pub fn clear_history(self: Pin<&mut Self>) {
         let keep = self.active_session_id;
         if let Some(c) = self.db() {
-            let _ = c.execute("DELETE FROM sessions WHERE id != ?", [keep]);
+            // running mark-only sessions too: their rows must outlive the run
+            let _ = c.execute(
+                "DELETE FROM sessions WHERE id != ? AND status != 'running'",
+                [keep],
+            );
         }
         if let Some(s) = self.sessions() {
             s.remove_all_except(keep as i64);
@@ -797,19 +767,20 @@ impl AppController {
         let Some(e) = self.sources().and_then(|s| s.entry_for(&key)) else {
             return self.preview_failed(source_key, qs("That source is no longer available."));
         };
-        let mut root = e["rootPath"].as_str().unwrap_or("").to_string();
-        if root.is_empty() && e["kind"] == json!("blockdev") {
-            root = self
-                .rt
-                .as_ref()
-                .and_then(|rt| rt.watcher.lock().unwrap().mount_source(&key))
-                .unwrap_or_default();
+        let root = e["rootPath"].as_str().unwrap_or("").to_string();
+        match (&self.rt, root.is_empty()) {
+            (Some(rt), true) if e["kind"] == json!("blockdev") => {
+                let _ = rt.watcher.send(WatchCmd::Mount(key));
+            }
+            (Some(rt), false) => rt.preview.request(&key, &root),
+            _ => self.preview_failed(source_key, qs("Could not mount this device.")),
         }
-        if root.is_empty() {
-            return self.preview_failed(source_key, qs("Could not mount this device."));
-        }
-        if let Some(rt) = &self.rt {
-            rt.preview.request(&key, &root);
+    }
+
+    fn on_mounted_for_preview(self: Pin<&mut Self>, key: String, root: Option<String>) {
+        match (&self.rt, root) {
+            (Some(rt), Some(root)) => rt.preview.request(&key, &root),
+            _ => self.preview_failed(qs(&key), qs("Could not mount this device.")),
         }
     }
 
@@ -1001,10 +972,7 @@ impl AppController {
             }
             "mtp_enabled" => {
                 if let Some(rt) = &self.rt {
-                    rt.watcher
-                        .lock()
-                        .unwrap()
-                        .set_mtp_enabled(db::truthy(Some(&value)));
+                    let _ = rt.watcher.send(WatchCmd::SetMtp(db::truthy(Some(&value))));
                 }
             }
             _ => {}
@@ -1019,6 +987,54 @@ impl AppController {
         let path = local_path(&folder_url);
         if let (false, Some(c)) = (path.is_empty(), self.db()) {
             let _ = db::set_setting(c, "library_root", &json!(path));
+        }
+    }
+}
+
+enum WatchCmd {
+    Poll,
+    Eject(String),
+    Mount(String),
+    SetMtp(bool),
+    Stop,
+}
+
+/// Owns the device watcher so its blocking D-Bus/gio/FUSE calls never touch the GUI thread.
+fn run_watcher(qt: &Qt, mtp_enabled: bool, cmds: &mpsc::Receiver<WatchCmd>) {
+    let mut watcher = {
+        let qt = qt.clone();
+        DeviceWatcher::new(mtp_enabled, move |ev| {
+            queue(&qt, move |c| c.on_device_event(ev))
+        })
+    };
+    let mut theme = theme_stamp();
+    watcher.poll();
+    loop {
+        match cmds.recv_timeout(devices::POLL_INTERVAL) {
+            Ok(WatchCmd::Poll) | Err(RecvTimeoutError::Timeout) => watcher.poll(),
+            Ok(WatchCmd::Eject(root)) => {
+                if !watcher.eject(&root) {
+                    queue(qt, |c| {
+                        c.emit_toast("Could not eject -- it may still be in use.")
+                    });
+                }
+            }
+            Ok(WatchCmd::Mount(key)) => {
+                let root = watcher.mount_source(&key);
+                queue(qt, move |c| c.on_mounted_for_preview(key, root));
+            }
+            Ok(WatchCmd::SetMtp(on)) => watcher.set_mtp_enabled(on),
+            Ok(WatchCmd::Stop) | Err(RecvTimeoutError::Disconnected) => return watcher.stop(),
+        }
+        // ponytail: theme.json polled on the device tick; inotify if 2.5s lag ever matters
+        let now = theme_stamp();
+        if now != theme {
+            theme = now;
+            let custom = load_theme_json();
+            queue(qt, move |mut c| {
+                c.as_mut().rust_mut().theme_custom = to_qvariant(&custom);
+                c.palette_changed();
+            });
         }
     }
 }

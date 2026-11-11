@@ -281,6 +281,7 @@ impl AppController {
             .ok();
         spawn_instance_listener(&qt);
         spawn_watchdog(&qt);
+        crate::sleep::spawn();
 
         self.as_mut().rust_mut().rt = Some(Runtime {
             watcher,

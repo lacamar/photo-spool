@@ -7,6 +7,7 @@ mod import;
 mod paths;
 mod qt;
 mod scanner;
+mod sleep;
 #[cfg(test)]
 mod testutil;
 mod thumbs;

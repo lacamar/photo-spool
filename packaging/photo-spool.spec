@@ -1,5 +1,5 @@
 Name:           photo-spool
-Version:        0.6.6
+Version:        0.6.7
 Release:        1%{?dist}
 Summary:        Automatic raw -> lossless DNG photo import from cameras and iPhones
 
@@ -118,6 +118,9 @@ done
 %{_userunitdir}/%{name}.service
 
 %changelog
+* Thu Nov 12 2026 Photo Spool <noreply@example.com> - 0.6.7-1
+- Release Wi-Fi iPhone mount before sleep
+
 * Wed Nov 11 2026 Photo Spool <noreply@example.com> - 0.6.6-1
 - Never leave sessions stuck running
 - Cancel imports on quit

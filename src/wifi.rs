@@ -7,6 +7,7 @@ use std::net::IpAddr;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -367,6 +368,10 @@ impl WifiIphones {
 
         let mut live = HashMap::new();
         for udid in wanted.keys().filter(|u| !self.ejected.contains(*u)) {
+            if sleeping() {
+                live.insert(udid.clone(), None);
+                continue;
+            }
             let mp = mountpoint(udid);
             let is_mounted = mounted(&mp);
             let verdict = match self.probes.get(udid) {
@@ -476,6 +481,37 @@ impl WifiIphones {
             let _ = std::fs::write(&self.map_file, json);
         }
     }
+}
+
+static SLEEPING: AtomicBool = AtomicBool::new(false);
+
+pub fn sleeping() -> bool {
+    SLEEPING.load(Ordering::SeqCst)
+}
+
+/// Killing ifuse aborts the FUSE connection, which fails readers blocked on it with ENOTCONN;
+/// a lazy unmount alone leaves them stuck. Nothing here waits on the mount.
+pub fn sleep_begin() {
+    SLEEPING.store(true, Ordering::SeqCst);
+    let Ok(entries) = std::fs::read_dir(runtime_dir().join("wifi")) else {
+        return;
+    };
+    for udid in entries.flatten().map(|e| util::file_name(&e.path())) {
+        let mp = mountpoint(&udid);
+        if mounted(&mp) {
+            let _ = util::run_capture(
+                Command::new("pkill")
+                    .args(["-KILL", "-f", "--"])
+                    .arg(format!("^ifuse .* {}$", util::lossy(&mp))),
+                Duration::from_secs(2),
+            );
+            unmount(&udid);
+        }
+    }
+}
+
+pub fn sleep_end() {
+    SLEEPING.store(false, Ordering::SeqCst);
 }
 
 fn mountpoint(udid: &str) -> PathBuf {

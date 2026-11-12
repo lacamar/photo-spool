@@ -504,3 +504,70 @@ fn stop_cancels_running_session() {
     assert_eq!(status, "cancelled");
     assert!(env.staging_entries().is_empty());
 }
+
+fn run_with_card_dropped(env: &Env, back_after: Option<Duration>) -> i64 {
+    let card = env.card.clone();
+    let (tx, _rx) = mpsc::channel::<Event>();
+    let tx = Mutex::new(tx);
+    let dropped = Mutex::new(false);
+    let p = Pipeline::for_test(
+        move |e| {
+            if let Event::Progress {
+                phase: PHASE_CHECKING,
+                ..
+            } = e
+                && !std::mem::replace(&mut *dropped.lock().unwrap(), true)
+            {
+                let gone = card.with_extension("gone");
+                std::fs::rename(&card, &gone).unwrap();
+                if let Some(d) = back_after {
+                    let card = card.clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(d);
+                        std::fs::rename(&gone, &card).unwrap();
+                    });
+                }
+            }
+            let _ = tx.lock().unwrap().send(e);
+        },
+        Some(env.dnglab.clone()),
+    );
+    let req = ImportRequest {
+        source_root: lossy(&env.card),
+        device_label: "Test".into(),
+        kind: "mtp".into(),
+        selected_filenames: None,
+        mark_only: false,
+    };
+    p.run_session(&env.conn, &req);
+    env.conn
+        .query_row("SELECT MAX(id) FROM sessions", [], |r| r.get(0))
+        .unwrap()
+}
+
+#[test]
+fn source_dropping_mid_import_is_retried_once_remounted() {
+    let env = Env::new();
+    env.write("IMG_0001.mov", b"one");
+    env.write("IMG_0002.mov", b"two");
+    let id = run_with_card_dropped(&env, Some(Duration::from_millis(200)));
+    assert_eq!(env.counts(id), ("completed".into(), 2, 0, 0));
+}
+
+#[test]
+fn source_that_never_returns_fails_its_files() {
+    let env = Env::new();
+    env.write("IMG_0001.mov", b"one");
+    env.write("IMG_0002.mov", b"two");
+    let id = run_with_card_dropped(&env, None);
+    assert_eq!(env.counts(id), ("completed".into(), 0, 0, 2));
+}
+
+#[test]
+fn staging_dirs_are_cleaned_up_when_nothing_is_new() {
+    let env = Env::new();
+    env.write("clip.mov", b"seen before");
+    env.run(None, false);
+    env.run(None, false);
+    assert!(env.staging_entries().is_empty());
+}

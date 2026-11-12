@@ -5,7 +5,7 @@ use std::process::Command;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use rusqlite::{Connection, ErrorCode, params};
 
@@ -91,6 +91,29 @@ pub struct Pipeline {
     emit: Box<dyn Fn(Event) + Send>,
     find_dnglab: Box<dyn Fn() -> Option<PathBuf> + Send>,
     pause: Arc<Pause>,
+    source_wait: SourceWait,
+}
+
+/// How long to wait for a dropped source (Wi-Fi iPhone mount) to come back before failing its files.
+struct SourceWait {
+    limit: Duration,
+    poll: Duration,
+}
+
+impl Default for SourceWait {
+    // wifi remount takes ~2 min: hang probe, unmount, heartbeat, mount retries
+    fn default() -> Self {
+        Self {
+            limit: Duration::from_secs(240),
+            poll: Duration::from_secs(5),
+        }
+    }
+}
+
+fn source_lost(e: &std::io::Error, root: &Path) -> bool {
+    e.raw_os_error() == Some(libc::EIO)
+        || e.kind() == std::io::ErrorKind::NotConnected
+        || (e.kind() == std::io::ErrorKind::NotFound && !root.exists())
 }
 
 enum Msg {
@@ -112,6 +135,7 @@ impl ImportWorker {
             emit: Box::new(emit),
             find_dnglab: Box::new(find_dnglab),
             pause: pause.clone(),
+            source_wait: SourceWait::default(),
         };
         let thread = std::thread::spawn(move || pipeline.run(rx));
         Self {
@@ -156,6 +180,10 @@ impl Pipeline {
             emit: Box::new(emit),
             find_dnglab: Box::new(move || dnglab.clone()),
             pause: Arc::default(),
+            source_wait: SourceWait {
+                limit: Duration::from_secs(5),
+                poll: Duration::from_millis(20),
+            },
         }
     }
 
@@ -198,16 +226,27 @@ impl Pipeline {
         }
     }
 
+    /// Ok(false) once the source has been gone longer than the wait limit; stays false for the session.
+    fn await_source(&self, lost_since: &mut Option<Instant>) -> anyhow::Result<bool> {
+        if lost_since.get_or_insert_with(Instant::now).elapsed() >= self.source_wait.limit {
+            return Ok(false);
+        }
+        self.checkpoint()?;
+        std::thread::sleep(self.source_wait.poll);
+        Ok(true)
+    }
+
     /// Always ends the session row (never left 'running') and drops its staging dir.
     pub fn run_session(&self, conn: &Connection, request: &ImportRequest) {
         let session_id = match self.start_session(conn, request) {
             Ok(id) => id,
             Err(e) => return log::error!("Could not start import session: {e}"),
         };
-        let Err(e) = self.session_body(conn, request, session_id) else {
+        let result = self.session_body(conn, request, session_id);
+        let _ = std::fs::remove_dir_all(paths::staging_dir().join(format!("session-{session_id}")));
+        let Err(e) = result else {
             return;
         };
-        let _ = std::fs::remove_dir_all(paths::staging_dir().join(format!("session-{session_id}")));
         let status = if e.is::<Cancelled>() {
             "cancelled"
         } else {
@@ -296,6 +335,7 @@ impl Pipeline {
         // identical content twice in one batch: recorded as duplicate once the primary's fate is known
         let mut seen_hashes: HashSet<String> = HashSet::new();
         let mut intra_batch_duplicates: Vec<(String, String, i64)> = Vec::new();
+        let mut source_lost_since: Option<Instant> = None;
 
         for (i, f) in files.iter().enumerate() {
             self.checkpoint()?;
@@ -324,9 +364,10 @@ impl Pipeline {
                 record_file(conn, session_id, &name, "duplicate", &dest, "", order)?;
                 continue;
             }
-            let staged = if request.mark_only {
-                scanner::hash_file(&cand.path).map(|h| (h, None))
-            } else {
+            let stage = || {
+                if request.mark_only {
+                    return scanner::hash_file(&cand.path).map(|h| (h, None));
+                }
                 let passthrough = scanner::is_dng(&cand.path) || scanner::is_video(&cand.path);
                 let stage_dir = if passthrough {
                     &staging_copy
@@ -340,9 +381,23 @@ impl Pipeline {
                     std::fs::rename(&tmp, &staged).map(|_| (h, Some(staged)))
                 })
             };
+            let mut staged = stage();
+            while let Err(e) = &staged
+                && source_lost(e, Path::new(root))
+                && self.await_source(&mut source_lost_since)?
+            {
+                staged = stage();
+            }
+            if staged.is_ok() {
+                source_lost_since = None;
+            }
             let (source_hash, staged_path) = match staged {
                 Ok(s) => s,
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound && !cand.path.exists() => {
+                Err(e)
+                    if e.kind() == std::io::ErrorKind::NotFound
+                        && !cand.path.exists()
+                        && Path::new(root).exists() =>
+                {
                     continue;
                 }
                 Err(e) => {
@@ -518,7 +573,6 @@ impl Pipeline {
             record_file(conn, session_id, name, "duplicate", &dest, "", *order)?;
         }
 
-        let _ = std::fs::remove_dir_all(&staging_root);
         conn.execute(
             "UPDATE sessions SET bytes_saved = bytes_saved + ? WHERE id = ?",
             params![placer.bytes_saved, session_id],
